@@ -4,6 +4,9 @@ export const NOTE_CONTENT_MAX_BYTES = 500 * 1024
 export const NOTE_CONTENT_MAX_DEPTH = 20
 export const NOTE_CONTENT_MAX_NODES = 10_000
 
+export const NOTE_BACKGROUND_VALUES = ['default', 'blue', 'mint', 'yellow', 'rose', 'lavender'] as const
+export type NoteBackground = (typeof NOTE_BACKGROUND_VALUES)[number]
+
 export const NOTE_IMAGE_MAX_SIZE_MB = 5
 export const NOTE_IMAGE_MAX_SIZE_BYTES = NOTE_IMAGE_MAX_SIZE_MB * 1024 * 1024
 export const NOTE_IMAGE_ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const

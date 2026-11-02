@@ -1,5 +1,8 @@
+import type { NoteBackground } from '../config/notes.config.js'
+
 export interface NoteContentMark {
-  type: 'bold' | 'italic'
+  type: 'bold' | 'italic' | 'underline' | 'textStyle'
+  attrs?: Readonly<Record<string, unknown>>
 }
 
 export interface NoteContentNode {
@@ -14,6 +17,8 @@ export interface NoteSummary {
   id: string
   title: string
   preview: string
+  contentPreview: NoteContentNode
+  background: NoteBackground
   version: number
   createdAt: string
   updatedAt: string

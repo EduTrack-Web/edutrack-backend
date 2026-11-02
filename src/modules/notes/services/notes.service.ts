@@ -1,10 +1,20 @@
 import { isValidObjectId } from 'mongoose'
 
 import { AppError } from '../../../shared/errors/app-error.js'
-import { NOTE_DEFAULT_TITLE, NOTE_TITLE_MAX_LENGTH } from '../config/notes.config.js'
+import {
+  NOTE_BACKGROUND_VALUES,
+  NOTE_DEFAULT_TITLE,
+  NOTE_TITLE_MAX_LENGTH,
+  type NoteBackground,
+} from '../config/notes.config.js'
 import { notesRepository } from '../repositories/notes.repository.js'
 import type { NoteContentNode, NoteDetail, NoteSummary } from '../types/notes.types.js'
-import { extractPlainText, validateNoteContent, validateNoteImageReferences } from '../validation/note-content.validation.js'
+import {
+  createNoteContentPreview,
+  extractPlainText,
+  validateNoteContent,
+  validateNoteImageReferences,
+} from '../validation/note-content.validation.js'
 
 const emptyDocument: NoteContentNode = { type: 'doc', content: [{ type: 'paragraph' }] }
 
@@ -13,6 +23,7 @@ export interface PersistedNote {
   title: string
   content: unknown
   plainText: string
+  background: NoteBackground
   version: number
   createdAt: Date
   updatedAt: Date
@@ -25,18 +36,23 @@ export interface NotesRepositoryContract {
   updateOwnedNote: (
     userId: string,
     noteId: string,
-    update: { title: string; content: NoteContentNode; plainText: string },
+    update: { title: string; content: NoteContentNode; plainText: string; background?: NoteBackground },
   ) => PromiseLike<unknown | null>
 }
 
-const toSummary = (note: PersistedNote): NoteSummary => ({
-  id: String(note._id),
-  title: note.title,
-  preview: note.plainText.slice(0, 180),
-  version: note.version,
-  createdAt: note.createdAt.toISOString(),
-  updatedAt: note.updatedAt.toISOString(),
-})
+const toSummary = (note: PersistedNote): NoteSummary => {
+  const content = validateNoteContent(note.content)
+  return {
+    id: String(note._id),
+    title: note.title,
+    preview: note.plainText.slice(0, 180),
+    contentPreview: createNoteContentPreview(content),
+    background: note.background ?? 'default',
+    version: note.version,
+    createdAt: note.createdAt.toISOString(),
+    updatedAt: note.updatedAt.toISOString(),
+  }
+}
 
 const toDetail = (note: PersistedNote): NoteDetail => ({
   ...toSummary(note),
@@ -58,6 +74,16 @@ const normalizeTitle = (value: unknown): string => {
     })
   }
   return title
+}
+
+const normalizeBackground = (value: unknown): NoteBackground | undefined => {
+  if (value === undefined) return undefined
+  if (typeof value !== 'string' || !NOTE_BACKGROUND_VALUES.includes(value as NoteBackground)) {
+    throw new AppError(422, 'VALIDATION_ERROR', 'Dữ liệu không hợp lệ.', {
+      background: 'Màu nền ghi chú không hợp lệ.',
+    })
+  }
+  return value as NoteBackground
 }
 
 export const createNotesService = (repository: NotesRepositoryContract) => ({
@@ -84,16 +110,18 @@ export const createNotesService = (repository: NotesRepositoryContract) => ({
       throw new AppError(422, 'VALIDATION_ERROR', 'Dữ liệu không hợp lệ.')
     }
     const payload = input as Record<string, unknown>
-    if (!Object.keys(payload).every((key) => ['title', 'content'].includes(key))) {
+    if (!Object.keys(payload).every((key) => ['title', 'content', 'background'].includes(key))) {
       throw new AppError(422, 'VALIDATION_ERROR', 'Dữ liệu không hợp lệ.')
     }
     const title = normalizeTitle(payload.title)
     const content = validateNoteContent(payload.content)
+    const background = normalizeBackground(payload.background)
     validateNoteImageReferences(content, userId)
     const note = await repository.updateOwnedNote(userId, noteId, {
       title,
       content,
       plainText: extractPlainText(content),
+      ...(background ? { background } : {}),
     })
     if (!note) throw new AppError(404, 'NOTE_NOT_FOUND', 'Không tìm thấy ghi chú.')
     return toDetail(note as PersistedNote)
