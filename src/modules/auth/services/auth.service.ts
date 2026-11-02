@@ -2,12 +2,12 @@ import { randomInt } from 'node:crypto'
 
 import bcrypt from 'bcrypt'
 
-import { AppError } from '../../shared/errors/app-error.js'
-import { authRepository } from './auth.repository.js'
-import type { OtpPurpose, SafeUser } from './auth.types.js'
+import { AppError } from '../../../shared/errors/app-error.js'
+import { authRepository } from '../repositories/auth.repository.js'
+import type { OtpPurpose, SafeUser } from '../types/auth.types.js'
 import { sendOtpEmail } from './email.service.js'
 import { createAccessToken, createRefreshToken, hashToken, refreshMaxAge } from './token.service.js'
-import { emailError, normalizeEmail, normalizeIdentifier, passwordError, validateEmail, validatePassword } from './auth.validation.js'
+import { emailError, normalizeEmail, normalizeIdentifier, passwordError, validateEmail, validatePassword } from '../validations/auth.validation.js'
 
 const OTP_EXPIRY_MS = 10 * 60 * 1000
 const OTP_RESEND_DELAY_MS = 10 * 1000
@@ -115,7 +115,7 @@ export const authService = {
 
   async verifyRegistration(otpId: string, code: string) {
     const otp = await verifyOtp(otpId, code, 'registration')
-    const { UserModel } = await import('./user.model.js')
+    const { UserModel } = await import('../models/user.model.js')
     const updated = await UserModel.findByIdAndUpdate(otp.userId, { status: 'active', emailVerified: true }, { new: true })
     if (!updated) throw new AppError(404, 'USER_NOT_FOUND', 'Không tìm thấy tài khoản.')
     return toSafeUser(updated)
@@ -155,7 +155,7 @@ export const authService = {
 
   async verifyTwoFactor(otpId: string, code: string, context: { userAgent?: string; ipAddress?: string }) {
     const otp = await verifyOtp(otpId, code, 'login-2fa')
-    const { UserModel } = await import('./user.model.js')
+    const { UserModel } = await import('../models/user.model.js')
     const user = await UserModel.findById(otp.userId)
     if (!user || user.status !== 'active') throw new AppError(401, 'ACCOUNT_UNAVAILABLE', 'Tài khoản không khả dụng.')
     user.lastLoginAt = new Date()
@@ -176,7 +176,7 @@ export const authService = {
   async resendOtp(otpId: string, purpose: OtpPurpose) {
     const previous = await authRepository.findOtpById(otpId)
     if (!previous || previous.purpose !== purpose) throw new AppError(400, 'OTP_INVALID', 'Yêu cầu gửi lại OTP không hợp lệ.')
-    const { UserModel } = await import('./user.model.js')
+    const { UserModel } = await import('../models/user.model.js')
     const user = await UserModel.findById(previous.userId)
     if (!user) throw new AppError(404, 'USER_NOT_FOUND', 'Không tìm thấy tài khoản.')
     return { otpId: await issueOtp(String(user._id), user.email, purpose) }
@@ -186,7 +186,7 @@ export const authService = {
     validatePassword(password, 'newPassword')
     if (password !== confirmPassword) throw new AppError(422, 'VALIDATION_ERROR', 'Dữ liệu không hợp lệ.', { confirmPassword: 'Mật khẩu xác nhận không khớp.' })
     const otp = await verifyOtp(otpId, code, 'password-reset')
-    const { UserModel } = await import('./user.model.js')
+    const { UserModel } = await import('../models/user.model.js')
     const user = await UserModel.findById(otp.userId).select('+passwordHash')
     if (!user) throw new AppError(404, 'USER_NOT_FOUND', 'Không tìm thấy tài khoản.')
     if (user.passwordHash && await bcrypt.compare(password, user.passwordHash)) throw new AppError(422, 'PASSWORD_REUSED', 'Mật khẩu mới phải khác mật khẩu cũ.')
@@ -198,7 +198,7 @@ export const authService = {
   async refresh(refreshToken: string, context: { userAgent?: string; ipAddress?: string }) {
     const session = await authRepository.findSessionByHash(hashToken(refreshToken))
     if (!session || session.revokedAt || session.expiresAt.getTime() < Date.now()) throw new AppError(401, 'INVALID_REFRESH_TOKEN', 'Phiên đăng nhập đã hết hạn.')
-    const { UserModel } = await import('./user.model.js')
+    const { UserModel } = await import('../models/user.model.js')
     const user = await UserModel.findById(session.userId)
     if (!user || user.status !== 'active') throw new AppError(401, 'ACCOUNT_UNAVAILABLE', 'Tài khoản không khả dụng.')
     session.revokedAt = new Date()

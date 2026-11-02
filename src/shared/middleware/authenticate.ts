@@ -1,7 +1,7 @@
 import type { RequestHandler } from 'express'
 
 import { AppError } from '../errors/app-error.js'
-import { verifyAccessToken } from '../../modules/auth/token.service.js'
+import { verifyAccessToken } from '../../modules/auth/services/token.service.js'
 
 export interface AuthenticatedRequestLocals {
   userId: string

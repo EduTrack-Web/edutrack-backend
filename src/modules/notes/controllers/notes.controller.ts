@@ -1,5 +1,5 @@
 import type { RequestHandler } from 'express'
-import { notesService } from './notes.service.js'
+import { notesService } from '../services/notes.service.js'
 
 export const getNotes: RequestHandler = async (_request, response) => {
   const auth = response.locals.auth as { userId: string } | undefined

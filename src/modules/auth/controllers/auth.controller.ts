@@ -2,12 +2,12 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 
 import type { Request, RequestHandler, Response } from 'express'
 
-import { env } from '../../config/env.js'
-import { AppError } from '../../shared/errors/app-error.js'
-import { authService } from './auth.service.js'
-import { accessMaxAge, refreshMaxAge } from './token.service.js'
-import { requiredString, requiredStrings } from './auth.validation.js'
-import { UserModel } from './user.model.js'
+import { env } from '../../../config/env.js'
+import { AppError } from '../../../shared/errors/app-error.js'
+import { UserModel } from '../models/user.model.js'
+import { authService } from '../services/auth.service.js'
+import { accessMaxAge, refreshMaxAge } from '../services/token.service.js'
+import { requiredString, requiredStrings } from '../validations/auth.validation.js'
 
 const ACCESS_COOKIE = 'edutrack_access'
 const REFRESH_COOKIE = 'edutrack_refresh'

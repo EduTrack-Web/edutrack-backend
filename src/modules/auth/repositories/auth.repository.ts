@@ -1,7 +1,7 @@
-import { OtpModel } from './otp.model.js'
-import { SessionModel } from './session.model.js'
-import { UserModel } from './user.model.js'
-import type { OtpPurpose } from './auth.types.js'
+import { OtpModel } from '../models/otp.model.js'
+import { SessionModel } from '../models/session.model.js'
+import { UserModel } from '../models/user.model.js'
+import type { OtpPurpose } from '../types/auth.types.js'
 
 export const authRepository = {
   findUserByEmail: (email: string, includeSecrets = false) =>

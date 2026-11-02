@@ -1,5 +1,5 @@
 import type { RequestHandler } from 'express'
-import { chatService } from './chat.service.js'
+import { chatService } from '../services/chat.service.js'
 
 export const getChannels: RequestHandler = async (_request, response) => {
   const auth = response.locals.auth as { userId: string } | undefined

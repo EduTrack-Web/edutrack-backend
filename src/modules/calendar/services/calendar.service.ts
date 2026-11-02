@@ -1,4 +1,4 @@
-import { calendarRepository } from './calendar.repository.js'
+import { calendarRepository } from '../repositories/calendar.repository.js'
 
 export const calendarService = {
   getUserEvents: async (userId: string) => {

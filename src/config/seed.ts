@@ -1,7 +1,7 @@
 import bcrypt from 'bcrypt'
 
 import { env } from './env.js'
-import { UserModel } from '../modules/auth/user.model.js'
+import { UserModel } from '../modules/auth/models/user.model.js'
 
 const developmentUsers = [
   { fullName: 'Development User', username: 'user', email: 'user@edutrack.local', password: 'User@123', role: 'user' },

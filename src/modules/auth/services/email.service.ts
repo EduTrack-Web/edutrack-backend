@@ -1,7 +1,7 @@
 import nodemailer from 'nodemailer'
 
-import { env } from '../../config/env.js'
-import { AppError } from '../../shared/errors/app-error.js'
+import { env } from '../../../config/env.js'
+import { AppError } from '../../../shared/errors/app-error.js'
 
 const getTransporter = () => {
   if (!env.emailUser || !env.emailAppPassword) {

@@ -1,4 +1,4 @@
-import { notesRepository } from './notes.repository.js'
+import { notesRepository } from '../repositories/notes.repository.js'
 
 export const notesService = {
   getUserNotes: async (userId: string) => {

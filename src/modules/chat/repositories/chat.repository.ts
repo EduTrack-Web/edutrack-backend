@@ -1,4 +1,4 @@
-import type { ChatChannelItem } from './chat.types.js'
+import type { ChatChannelItem } from '../types/chat.types.js'
 
 export const chatRepository = {
   findChannelsByUserId: async (_userId: string): Promise<ChatChannelItem[]> => {

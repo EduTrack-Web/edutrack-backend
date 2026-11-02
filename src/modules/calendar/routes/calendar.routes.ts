@@ -1,6 +1,6 @@
 import { Router } from 'express'
-import { authenticate } from '../../shared/middleware/authenticate.js'
-import { getEvents } from './calendar.controller.js'
+import { authenticate } from '../../../shared/middleware/authenticate.js'
+import { getEvents } from '../controllers/calendar.controller.js'
 
 export const calendarRouter = Router()
 

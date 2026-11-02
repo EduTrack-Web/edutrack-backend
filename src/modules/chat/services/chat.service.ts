@@ -1,4 +1,4 @@
-import { chatRepository } from './chat.repository.js'
+import { chatRepository } from '../repositories/chat.repository.js'
 
 export const chatService = {
   getUserChannels: async (userId: string) => {

@@ -2,8 +2,8 @@ import { createHash, randomBytes } from 'node:crypto'
 
 import jwt from 'jsonwebtoken'
 
-import { env } from '../../config/env.js'
-import { AppError } from '../../shared/errors/app-error.js'
+import { env } from '../../../config/env.js'
+import { AppError } from '../../../shared/errors/app-error.js'
 
 const ACCESS_MAX_AGE_MS = 15 * 60 * 1000
 const REFRESH_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
