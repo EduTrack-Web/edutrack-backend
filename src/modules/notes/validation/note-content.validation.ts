@@ -7,9 +7,10 @@ import {
 } from '../config/notes.config.js'
 import type { NoteContentMark, NoteContentNode } from '../types/notes.types.js'
 
-const blockTypes = new Set(['paragraph', 'bulletList', 'orderedList', 'taskList', 'image'])
+const blockTypes = new Set(['paragraph', 'heading', 'bulletList', 'orderedList', 'taskList', 'image'])
 const inlineTypes = new Set(['text', 'hardBreak'])
-const allowedMarks = new Set(['bold', 'italic'])
+const allowedMarks = new Set(['bold', 'italic', 'underline', 'textStyle'])
+const textColorPattern = /^#[0-9a-f]{6}$/i
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -26,10 +27,18 @@ const validateMarks = (value: unknown): readonly NoteContentMark[] => {
   if (!Array.isArray(value)) throw contentError()
   const seen = new Set<string>()
   return value.map((mark) => {
-    if (!isRecord(mark) || !hasOnlyKeys(mark, ['type']) || typeof mark.type !== 'string') throw contentError()
+    if (!isRecord(mark) || typeof mark.type !== 'string') throw contentError()
     if (!allowedMarks.has(mark.type) || seen.has(mark.type)) throw contentError()
     seen.add(mark.type)
-    return { type: mark.type as NoteContentMark['type'] }
+    if (mark.type === 'textStyle') {
+      if (!hasOnlyKeys(mark, ['type', 'attrs']) || !isRecord(mark.attrs) || !hasOnlyKeys(mark.attrs, ['color'])) {
+        throw contentError()
+      }
+      if (typeof mark.attrs.color !== 'string' || !textColorPattern.test(mark.attrs.color)) throw contentError()
+      return { type: 'textStyle', attrs: { color: mark.attrs.color.toLowerCase() } }
+    }
+    if (!hasOnlyKeys(mark, ['type'])) throw contentError()
+    return { type: mark.type as 'bold' | 'italic' | 'underline' }
   })
 }
 
@@ -87,6 +96,15 @@ const validateNode = (
         type: 'paragraph',
         ...(value.content === undefined ? {} : { content: validateChildren(value.content, inlineTypes, depth, counter) }),
       }
+    case 'heading': {
+      if (!hasOnlyKeys(value, ['type', 'attrs', 'content']) || !isRecord(value.attrs)) throw contentError()
+      if (!hasOnlyKeys(value.attrs, ['level']) || ![1, 2, 3].includes(Number(value.attrs.level))) throw contentError()
+      return {
+        type: 'heading',
+        attrs: { level: Number(value.attrs.level) },
+        ...(value.content === undefined ? {} : { content: validateChildren(value.content, inlineTypes, depth, counter) }),
+      }
+    }
     case 'image':
       if (!hasOnlyKeys(value, ['type', 'attrs'])) throw contentError()
       return { type: 'image', attrs: validateImageAttrs(value.attrs) }
@@ -152,6 +170,23 @@ export const extractPlainText = (node: NoteContentNode): string => {
   if (node.type === 'hardBreak') return '\n'
   const separator = ['paragraph', 'listItem', 'taskItem'].includes(node.type) ? '\n' : ' '
   return (node.content ?? []).map(extractPlainText).join(separator).replace(/\s+/g, ' ').trim()
+}
+
+export const createNoteContentPreview = (document: NoteContentNode): NoteContentNode => {
+  const limits = { nodes: 0, characters: 0 }
+  const cloneNode = (node: NoteContentNode): NoteContentNode | undefined => {
+    if (limits.nodes >= 80 || limits.characters >= 800) return undefined
+    limits.nodes += 1
+    if (node.type === 'text') {
+      const remaining = 800 - limits.characters
+      const text = (node.text ?? '').slice(0, remaining)
+      limits.characters += text.length
+      return { ...node, text }
+    }
+    const content = node.content?.map(cloneNode).filter((child): child is NoteContentNode => child !== undefined)
+    return { ...node, ...(content ? { content } : {}) }
+  }
+  return cloneNode(document) ?? { type: 'doc', content: [{ type: 'paragraph' }] }
 }
 
 export const validateNoteImageReferences = (node: NoteContentNode, userId: string): void => {

@@ -21,6 +21,7 @@ const persistedNote = (overrides: Partial<PersistedNote> = {}): PersistedNote =>
   title: NOTE_DEFAULT_TITLE,
   content: emptyContent,
   plainText: '',
+  background: 'default',
   version: 1,
   createdAt: new Date('2026-10-28T08:00:00.000Z'),
   updatedAt: new Date('2026-10-28T08:00:00.000Z'),
@@ -80,5 +81,46 @@ test('does not reveal whether a note exists when it is not owned by the current 
   await assert.rejects(
     service.getNote(ownerId, noteId),
     (error: unknown) => error instanceof AppError && error.statusCode === 404 && error.code === 'NOTE_NOT_FOUND',
+  )
+})
+
+test('validates and persists the selected note background with autosave content', async () => {
+  let receivedBackground = ''
+  const service = createNotesService(createRepository({
+    updateOwnedNote: async (_userId, _noteId, update) => {
+      receivedBackground = update.background ?? ''
+      return persistedNote({
+        title: update.title,
+        content: update.content,
+        plainText: update.plainText,
+        background: update.background ?? 'default',
+        version: 2,
+      })
+    },
+  }))
+
+  const updated = await service.updateNote(ownerId, noteId, {
+    title: 'Màu nền mới',
+    background: 'blue',
+    content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Nội dung' }] }] },
+  })
+
+  assert.equal(receivedBackground, 'blue')
+  assert.equal(updated.background, 'blue')
+  assert.equal(updated.version, 2)
+})
+
+test('rejects note background values outside the configured palette', async () => {
+  const service = createNotesService(createRepository())
+
+  await assert.rejects(
+    service.updateNote(ownerId, noteId, {
+      title: 'Màu không hợp lệ',
+      background: 'transparent-script',
+      content: emptyContent,
+    }),
+    (error: unknown) => error instanceof AppError
+      && error.code === 'VALIDATION_ERROR'
+      && error.fieldErrors?.background === 'Màu nền ghi chú không hợp lệ.',
   )
 })
