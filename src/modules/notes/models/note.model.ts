@@ -18,12 +18,16 @@ const noteSchema = new Schema(
     plainText: { type: String, default: '' },
     background: { type: String, enum: NOTE_BACKGROUND_VALUES, required: true, default: 'default' },
     version: { type: Number, required: true, min: 1, default: 1 },
+    deletedAt: { type: Date, default: null },
+    purgeAt: { type: Date, default: null },
   },
   { timestamps: true, versionKey: false },
 )
 
-noteSchema.index({ ownerId: 1, updatedAt: -1 })
-noteSchema.index({ ownerId: 1, title: 'text', plainText: 'text' })
+noteSchema.index({ ownerId: 1, deletedAt: 1, updatedAt: -1 })
+noteSchema.index({ ownerId: 1, deletedAt: 1, purgeAt: 1 })
+noteSchema.index({ purgeAt: 1 })
+noteSchema.index({ title: 'text', plainText: 'text' })
 
 export type NoteDocument = InferSchemaType<typeof noteSchema>
 export const NoteModel = model('Note', noteSchema)

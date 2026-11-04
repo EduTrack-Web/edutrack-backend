@@ -3,6 +3,7 @@ import test from 'node:test'
 
 import { AppError } from '../../src/shared/errors/app-error.js'
 import {
+  extractNoteImagePublicIds,
   extractPlainText,
   validateNoteContent,
 } from '../../src/modules/notes/validation/note-content.validation.js'
@@ -37,6 +38,19 @@ test('accepts the supported Tiptap nodes and extracts searchable plain text', ()
   })
 
   assert.equal(extractPlainText(content), 'Tiêu đề Kiến thức quan trọng Ôn bài')
+})
+
+test('extracts unique Cloudinary public ids for note cleanup', () => {
+  const content = validateNoteContent({
+    type: 'doc',
+    content: [
+      { type: 'image', attrs: { src: 'https://example.test/1', publicId: 'notes/image-1' } },
+      { type: 'image', attrs: { src: 'https://example.test/2', publicId: 'notes/image-1' } },
+      { type: 'image', attrs: { src: 'https://example.test/3', publicId: 'notes/image-2' } },
+    ],
+  })
+
+  assert.deepEqual(extractNoteImagePublicIds(content), ['notes/image-1', 'notes/image-2'])
 })
 
 test('rejects nodes, marks and attributes outside the allowed editor schema', () => {

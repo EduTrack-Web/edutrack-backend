@@ -23,6 +23,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "test": "tsx --test tests/**/*.test.ts",
+    "cleanup:notes": "tsx src/jobs/purge-expired-notes.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc",
     "start": "node dist/server.js"
