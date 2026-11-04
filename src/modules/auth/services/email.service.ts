@@ -15,7 +15,12 @@ const getTransporter = () => {
 }
 
 export const sendOtpEmail = async (email: string, code: string, purpose: string): Promise<void> => {
-  const subject = purpose === 'password-reset' ? 'Mã đặt lại mật khẩu EduTrack' : 'Mã xác thực EduTrack'
+  const subject =
+    purpose === 'password-reset'
+      ? 'Mã đặt lại mật khẩu EduTrack'
+      : purpose === 'delete-account'
+      ? 'Mã xác nhận xóa tài khoản EduTrack'
+      : 'Mã xác thực EduTrack'
   await getTransporter().sendMail({
     from: `EduTrack <${env.emailUser}>`,
     to: email,
