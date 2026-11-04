@@ -6,13 +6,34 @@ import { env } from '../../../config/env.js'
 import { AppError } from '../../../shared/errors/app-error.js'
 import { UserModel } from '../models/user.model.js'
 import { authService } from '../services/auth.service.js'
-import { accessMaxAge, refreshMaxAge } from '../services/token.service.js'
+import { accessMaxAge, refreshMaxAge, verifyAccessToken } from '../services/token.service.js'
+import type { OtpPurpose } from '../types/auth.types.js'
 import { requiredString, requiredStrings } from '../validations/auth.validation.js'
 
 const ACCESS_COOKIE = 'edutrack_access'
 const REFRESH_COOKIE = 'edutrack_refresh'
 const GOOGLE_STATE_COOKIE = 'edutrack_google_state'
 const GOOGLE_VERIFIER_COOKIE = 'edutrack_google_verifier'
+
+interface OAuthStatePayload {
+  nonce: string
+  action: 'login' | `link:${string}`
+}
+
+const encodeOAuthState = (payload: OAuthStatePayload): string =>
+  Buffer.from(JSON.stringify(payload)).toString('base64url')
+
+const decodeOAuthState = (raw: string): OAuthStatePayload | null => {
+  try {
+    const parsed = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8')) as unknown
+    if (typeof parsed === 'object' && parsed !== null && 'nonce' in parsed && 'action' in parsed) {
+      return parsed as OAuthStatePayload
+    }
+    return null
+  } catch {
+    return null
+  }
+}
 
 const cookieBase = () => ({
   httpOnly: true,
@@ -25,7 +46,7 @@ const setAuthCookies = (response: Response, tokens: { accessToken: string; refre
   response.cookie(REFRESH_COOKIE, tokens.refreshToken, { ...cookieBase(), maxAge: refreshMaxAge, path: '/v1/api/auth' })
 }
 
-const clearAuthCookies = (response: Response): void => {
+export const clearAuthCookies = (response: Response): void => {
   response.clearCookie(ACCESS_COOKIE, { ...cookieBase(), path: '/' })
   response.clearCookie(REFRESH_COOKIE, { ...cookieBase(), path: '/v1/api/auth' })
 }
@@ -84,10 +105,10 @@ export const forgotPassword: RequestHandler = async (request, response) => {
 export const resendOtp: RequestHandler = async (request, response) => {
   const otpId = requiredString(request.body.otpId, 'otp', 'mã xác thực')
   const purpose = requiredString(request.body.purpose, 'otp', 'mục đích xác thực')
-  if (!['registration', 'password-reset', 'login-2fa', 'toggle-2fa'].includes(purpose)) {
+  if (!['registration', 'password-reset', 'login-2fa', 'toggle-2fa', 'delete-account'].includes(purpose)) {
     throw new AppError(422, 'VALIDATION_ERROR', 'Mục đích OTP không hợp lệ.')
   }
-  const result = await authService.resendOtp(otpId, purpose as 'registration' | 'password-reset' | 'login-2fa' | 'toggle-2fa')
+  const result = await authService.resendOtp(otpId, purpose as OtpPurpose)
   response.json({ success: true, data: result, message: 'Mã OTP mới đã được gửi.' })
 }
 
@@ -134,13 +155,28 @@ const requireGoogleConfig = () => {
   }
 }
 
-export const startGoogleLogin: RequestHandler = (_request, response) => {
+export const startGoogleLogin: RequestHandler = (request, response) => {
   const google = requireGoogleConfig()
-  const state = randomBytes(32).toString('base64url')
+  const nonce = randomBytes(32).toString('base64url')
   const codeVerifier = randomBytes(64).toString('base64url')
   const codeChallenge = createHash('sha256').update(codeVerifier).digest('base64url')
-  response.cookie(GOOGLE_STATE_COOKIE, state, { ...cookieBase(), maxAge: 10 * 60 * 1000, path: '/v1/api/auth/google' })
+
+  const isLink = request.query.action === 'link'
+  let actionValue: OAuthStatePayload['action'] = 'login'
+  if (isLink) {
+    const accessToken = request.cookies[ACCESS_COOKIE]
+    if (typeof accessToken !== 'string') {
+      throw new AppError(401, 'AUTHENTICATION_REQUIRED', 'Vui lòng đăng nhập để liên kết tài khoản Google.')
+    }
+    const auth = verifyAccessToken(accessToken)
+    actionValue = `link:${auth.userId}`
+  }
+
+  const state = encodeOAuthState({ nonce, action: actionValue })
+
+  response.cookie(GOOGLE_STATE_COOKIE, nonce, { ...cookieBase(), maxAge: 10 * 60 * 1000, path: '/v1/api/auth/google' })
   response.cookie(GOOGLE_VERIFIER_COOKIE, codeVerifier, { ...cookieBase(), maxAge: 10 * 60 * 1000, path: '/v1/api/auth/google' })
+
   const parameters = new URLSearchParams({
     client_id: google.clientId,
     redirect_uri: google.callbackUrl,
@@ -159,14 +195,23 @@ const processGoogleCallback = async (request: Request, response: Response): Prom
   if (typeof request.query.error === 'string') {
     throw new AppError(401, 'GOOGLE_ACCESS_DENIED', 'Bạn đã hủy hoặc từ chối đăng nhập bằng Google.')
   }
-  const state = typeof request.query.state === 'string' ? request.query.state : ''
-  const storedState = request.cookies[GOOGLE_STATE_COOKIE]
+  const rawState = typeof request.query.state === 'string' ? request.query.state : ''
+  const parsedState = decodeOAuthState(rawState)
+  const storedNonce = request.cookies[GOOGLE_STATE_COOKIE]
   const codeVerifier = request.cookies[GOOGLE_VERIFIER_COOKIE]
-  const validState = typeof storedState === 'string' && state.length === storedState.length
-    && timingSafeEqual(Buffer.from(state), Buffer.from(storedState))
+
+  const validNonce = typeof storedNonce === 'string' && parsedState?.nonce
+    && parsedState.nonce.length === storedNonce.length
+    && timingSafeEqual(Buffer.from(parsedState.nonce), Buffer.from(storedNonce))
+
   response.clearCookie(GOOGLE_STATE_COOKIE, { ...cookieBase(), path: '/v1/api/auth/google' })
   response.clearCookie(GOOGLE_VERIFIER_COOKIE, { ...cookieBase(), path: '/v1/api/auth/google' })
-  if (!validState || typeof codeVerifier !== 'string') throw new AppError(400, 'GOOGLE_STATE_INVALID', 'Phiên đăng nhập Google không hợp lệ.')
+
+  if (!validNonce || typeof codeVerifier !== 'string' || !parsedState) {
+    throw new AppError(400, 'GOOGLE_STATE_INVALID', 'Phiên đăng nhập Google không hợp lệ hoặc đã hết hạn.')
+  }
+
+  const actionData = parsedState.action
   const code = typeof request.query.code === 'string' ? request.query.code : undefined
   if (!code) throw new AppError(400, 'GOOGLE_CODE_MISSING', 'Google không trả về mã xác thực.')
 
@@ -196,6 +241,31 @@ const processGoogleCallback = async (request: Request, response: Response): Prom
   if (typeof data.sub !== 'string' || typeof data.email !== 'string' || data.email_verified !== true || typeof data.name !== 'string') {
     throw new AppError(401, 'GOOGLE_EMAIL_UNVERIFIED', 'Email Google chưa được xác minh.')
   }
+
+  // 1. Luồng Liên kết tài khoản Google
+  if (actionData.startsWith('link:')) {
+    const linkUserId = actionData.split(':')[1]
+    const existingLinkedUser = await UserModel.findOne({ googleId: data.sub })
+    if (existingLinkedUser && String(existingLinkedUser._id) !== linkUserId) {
+      throw new AppError(409, 'GOOGLE_ALREADY_LINKED', 'Tài khoản Google này đã được liên kết với một tài khoản EduTrack khác.')
+    }
+
+    const userToLink = await UserModel.findById(linkUserId)
+    if (!userToLink || userToLink.status !== 'active') {
+      throw new AppError(404, 'USER_NOT_FOUND', 'Không tìm thấy tài khoản người dùng để liên kết.')
+    }
+
+    userToLink.googleId = data.sub
+    if (!userToLink.avatarUrl && typeof data.picture === 'string') {
+      userToLink.avatarUrl = data.picture
+    }
+    await userToLink.save()
+
+    response.redirect(`${env.frontendUrl}/account?oauthSuccess=GOOGLE_LINKED`)
+    return
+  }
+
+  // 2. Luồng Đăng nhập Google thông thường
   const result = await authService.loginWithGoogle({
     googleId: data.sub,
     email: data.email,
@@ -203,15 +273,21 @@ const processGoogleCallback = async (request: Request, response: Response): Prom
     ...(typeof data.picture === 'string' ? { avatarUrl: data.picture } : {}),
   }, requestContext(request))
   setAuthCookies(response, result.tokens)
-  response.redirect(`${env.frontendUrl}/dashboard`)
+  const targetPath = result.user.profileCompleted ? '/dashboard' : '/onboarding'
+  response.redirect(`${env.frontendUrl}${targetPath}`)
 }
 
 export const handleGoogleCallback: RequestHandler = async (request, response) => {
+  const rawState = typeof request.query.state === 'string' ? request.query.state : ''
+  const parsedState = decodeOAuthState(rawState)
+  const isLinkAction = Boolean(parsedState?.action?.startsWith('link:'))
+
   try {
     await processGoogleCallback(request, response)
   } catch (error: unknown) {
     const errorCode = error instanceof AppError ? error.code : 'GOOGLE_AUTH_FAILED'
     const parameters = new URLSearchParams({ oauthError: errorCode })
-    response.redirect(`${env.frontendUrl}/login?${parameters.toString()}`)
+    const redirectUrl = isLinkAction ? `${env.frontendUrl}/account` : `${env.frontendUrl}/login`
+    response.redirect(`${redirectUrl}?${parameters.toString()}`)
   }
 }

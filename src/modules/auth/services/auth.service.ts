@@ -18,6 +18,7 @@ const LOGIN_LOCK_MS = 15 * 60 * 1000
 
 const toSafeUser = (user: {
   _id: unknown; fullName: string; username: string; email: string; avatarUrl?: string | null; phone?: string | null
+  userType?: string | null; organization?: string | null; fieldOfStudy?: string | null; profileCompleted?: boolean
   role: string; status: string; emailVerified: boolean; twoFactorEnabled: boolean
 }): SafeUser => ({
   id: String(user._id),
@@ -26,6 +27,10 @@ const toSafeUser = (user: {
   email: user.email,
   ...(user.avatarUrl ? { avatarUrl: user.avatarUrl } : {}),
   ...(user.phone ? { phone: user.phone } : {}),
+  ...(user.userType ? { userType: user.userType as SafeUser['userType'] } : {}),
+  ...(user.organization ? { organization: user.organization } : {}),
+  ...(user.fieldOfStudy ? { fieldOfStudy: user.fieldOfStudy } : {}),
+  profileCompleted: Boolean(user.profileCompleted),
   role: user.role as SafeUser['role'],
   status: user.status as SafeUser['status'],
   emailVerified: user.emailVerified,
@@ -33,8 +38,13 @@ const toSafeUser = (user: {
 })
 
 const createUsername = async (fullName: string): Promise<string> => {
-  const base = fullName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/đ/g, 'd')
-    .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30) || 'user'
+  const base = fullName.replace(/[đĐ]/g, (c) => (c === 'Đ' ? 'd' : 'd'))
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 30) || 'user'
 
   for (let attempt = 0; attempt < 20; attempt += 1) {
     const username = `${base}-${randomInt(1000, 10_000)}`
@@ -43,7 +53,7 @@ const createUsername = async (fullName: string): Promise<string> => {
   throw new AppError(503, 'USERNAME_GENERATION_FAILED', 'Không thể tạo username lúc này.')
 }
 
-const issueOtp = async (userId: string, email: string, purpose: OtpPurpose): Promise<string> => {
+export const issueOtp = async (userId: string, email: string, purpose: OtpPurpose): Promise<string> => {
   const latest = await authRepository.latestOtp(userId, purpose)
   if (latest && Date.now() - latest.createdAt.getTime() < OTP_RESEND_DELAY_MS) {
     throw new AppError(429, 'OTP_RESEND_TOO_SOON', 'Vui lòng chờ 10 giây trước khi gửi lại OTP.')
@@ -65,7 +75,7 @@ const issueOtp = async (userId: string, email: string, purpose: OtpPurpose): Pro
   return String(otp._id)
 }
 
-const verifyOtp = async (otpId: string, code: string, purpose: OtpPurpose) => {
+export const verifyOtp = async (otpId: string, code: string, purpose: OtpPurpose) => {
   const otp = await authRepository.findOtpById(otpId)
   if (!otp || otp.purpose !== purpose || otp.usedAt) throw new AppError(400, 'OTP_INVALID', 'Mã OTP không hợp lệ.')
   if (otp.expiresAt.getTime() < Date.now()) throw new AppError(400, 'OTP_EXPIRED', 'Mã OTP đã hết hạn.')
