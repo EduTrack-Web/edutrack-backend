@@ -13,6 +13,16 @@ export interface NoteContentNode {
   text?: string
 }
 
+export type NotePermission = 'view' | 'edit'
+export type NoteAccessRole = 'owner' | NotePermission
+
+export interface NoteAccess {
+  role: NoteAccessRole
+  canEdit: boolean
+  canManageAccess: boolean
+  isSharedWithMe: boolean
+}
+
 export interface NoteSummary {
   id: string
   title: string
@@ -22,10 +32,35 @@ export interface NoteSummary {
   version: number
   createdAt: string
   updatedAt: string
+  access: NoteAccess
 }
 
 export interface NoteDetail extends NoteSummary {
   content: NoteContentNode
+}
+
+export interface TrashedNoteSummary extends NoteSummary {
+  deletedAt: string
+  purgeAt: string
+}
+
+export interface NoteTag {
+  id: string
+  name: string
+  color: string
+  createdAt: string
+}
+
+export interface NoteShareUser {
+  id: string
+  fullName: string
+  username: string
+  avatarUrl?: string
+}
+
+export interface NoteCollaborator extends NoteShareUser {
+  permission: NotePermission
+  isCurrentUser: boolean
 }
 
 export interface NoteImageUploadResult {

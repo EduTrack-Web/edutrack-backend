@@ -189,7 +189,11 @@ export const createNoteContentPreview = (document: NoteContentNode): NoteContent
   return cloneNode(document) ?? { type: 'doc', content: [{ type: 'paragraph' }] }
 }
 
-export const validateNoteImageReferences = (node: NoteContentNode, userId: string): void => {
+export const validateNoteImageReferences = (
+  node: NoteContentNode,
+  userId: string,
+  trustedPublicIds: ReadonlySet<string> = new Set(),
+): void => {
   if (node.type === 'image') {
     const src = node.attrs?.src
     const publicId = node.attrs?.publicId
@@ -201,15 +205,30 @@ export const validateNoteImageReferences = (node: NoteContentNode, userId: strin
       throw contentError()
     }
     const expectedAssetPath = `/edutrack/notes/${userId}/`
+    const isCurrentUserAsset = publicId.startsWith(`edutrack/notes/${userId}/`)
+      && imageUrl.pathname.includes(expectedAssetPath)
+    const isTrustedExistingAsset = trustedPublicIds.has(publicId)
+      && imageUrl.pathname.includes(`/${publicId}`)
     if (
       imageUrl.protocol !== 'https:'
       || imageUrl.hostname !== 'res.cloudinary.com'
       || !imageUrl.pathname.startsWith(`/${env.cloudinaryCloudName}/image/upload/`)
-      || !imageUrl.pathname.includes(expectedAssetPath)
-      || !publicId.startsWith(`edutrack/notes/${userId}/`)
+      || (!isCurrentUserAsset && !isTrustedExistingAsset)
     ) {
       throw contentError()
     }
   }
-  for (const child of node.content ?? []) validateNoteImageReferences(child, userId)
+  for (const child of node.content ?? []) validateNoteImageReferences(child, userId, trustedPublicIds)
+}
+
+export const extractNoteImagePublicIds = (node: NoteContentNode): string[] => {
+  const publicIds = new Set<string>()
+  const visit = (current: NoteContentNode): void => {
+    if (current.type === 'image' && typeof current.attrs?.publicId === 'string') {
+      publicIds.add(current.attrs.publicId)
+    }
+    for (const child of current.content ?? []) visit(child)
+  }
+  visit(node)
+  return [...publicIds]
 }

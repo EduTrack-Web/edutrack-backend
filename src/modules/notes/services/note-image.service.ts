@@ -11,7 +11,7 @@ import {
   type NoteImageFormat,
   type NoteImageMimeType,
 } from '../config/notes.config.js'
-import type { NoteImageUploadResult } from '../types/notes.types.js'
+import type { NoteContentNode, NoteImageUploadResult } from '../types/notes.types.js'
 
 interface UploadedImage {
   buffer: Buffer
@@ -96,6 +96,65 @@ export const noteImageService = {
       }
     } catch {
       throw new AppError(502, 'IMAGE_UPLOAD_FAILED', 'Không thể tải ảnh lên lúc này. Vui lòng thử lại.')
+    }
+  },
+
+  async destroyMany(publicIds: readonly string[]): Promise<void> {
+    if (publicIds.length === 0) return
+    requireCloudinaryConfig()
+    try {
+      await Promise.all(publicIds.map((publicId) => cloudinary.uploader.destroy(publicId, {
+        invalidate: true,
+        resource_type: 'image',
+      })))
+    } catch {
+      throw new AppError(502, 'NOTE_IMAGE_CLEANUP_FAILED', 'Không thể xóa hình ảnh của ghi chú lúc này.')
+    }
+  },
+
+  async duplicateContent(content: NoteContentNode, userId: string): Promise<{
+    content: NoteContentNode
+    createdPublicIds: string[]
+  }> {
+    const createdPublicIds: string[] = []
+    const duplicateNode = async (node: NoteContentNode): Promise<NoteContentNode> => {
+      if (node.type === 'image') {
+        const src = node.attrs?.src
+        if (typeof src !== 'string') throw new AppError(422, 'INVALID_NOTE_CONTENT', 'Nội dung ghi chú không hợp lệ.')
+        requireCloudinaryConfig()
+        const result = await cloudinary.uploader.upload(src, {
+          folder: `edutrack/notes/${userId}`,
+          resource_type: 'image',
+          allowed_formats: [...NOTE_IMAGE_ALLOWED_FORMATS],
+        })
+        if (!NOTE_IMAGE_ALLOWED_FORMATS.includes(result.format as NoteImageFormat)) {
+          throw new Error('Cloudinary returned an unsupported image format')
+        }
+        createdPublicIds.push(result.public_id)
+        return {
+          ...node,
+          attrs: {
+            ...node.attrs,
+            src: result.secure_url,
+            publicId: result.public_id,
+            width: result.width,
+            height: result.height,
+          },
+        }
+      }
+      if (!node.content) return node
+      return { ...node, content: await Promise.all(node.content.map(duplicateNode)) }
+    }
+
+    try {
+      return { content: await duplicateNode(content), createdPublicIds }
+    } catch {
+      try {
+        await this.destroyMany(createdPublicIds)
+      } catch {
+        // Cleanup will be retried operationally if Cloudinary is temporarily unavailable.
+      }
+      throw new AppError(502, 'NOTE_DUPLICATE_IMAGE_FAILED', 'Không thể sao chép hình ảnh của ghi chú.')
     }
   },
 }
