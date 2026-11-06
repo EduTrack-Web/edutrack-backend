@@ -4,6 +4,7 @@ import type { Request, RequestHandler, Response } from 'express'
 
 import { env } from '../../../config/env.js'
 import { AppError } from '../../../shared/errors/app-error.js'
+import { CSRF_COOKIE } from '../../../shared/middleware/csrf.js'
 import { UserModel } from '../models/user.model.js'
 import { authService } from '../services/auth.service.js'
 import { accessMaxAge, refreshMaxAge, verifyAccessToken } from '../services/token.service.js'
@@ -49,6 +50,12 @@ const setAuthCookies = (response: Response, tokens: { accessToken: string; refre
 export const clearAuthCookies = (response: Response): void => {
   response.clearCookie(ACCESS_COOKIE, { ...cookieBase(), path: '/' })
   response.clearCookie(REFRESH_COOKIE, { ...cookieBase(), path: '/v1/api/auth' })
+  response.clearCookie(CSRF_COOKIE, {
+    httpOnly: false,
+    secure: env.nodeEnv === 'production',
+    sameSite: env.nodeEnv === 'production' ? 'none' : 'lax',
+    path: '/',
+  })
 }
 
 const requestContext = (request: Request) => ({

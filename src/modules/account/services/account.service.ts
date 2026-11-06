@@ -18,7 +18,7 @@ import type {
   UpdateProfileDto,
   UserProfileResponse,
 } from '../types/account.types.js'
-import { USERNAME_REGEX } from '../validations/account.validation.js'
+import { validateUsernameFormat } from '../validations/account.validation.js'
 
 const USERNAME_COOLDOWN_DAYS = 14
 const USERNAME_COOLDOWN_MS = USERNAME_COOLDOWN_DAYS * 24 * 60 * 60 * 1000
@@ -174,13 +174,15 @@ export const accountService = {
   },
 
   async checkUsernameAvailability(userId: string, username: string): Promise<{ available: boolean; message?: string }> {
-    const normalized = username.trim().toLowerCase()
-    if (!USERNAME_REGEX.test(normalized)) {
+    const formatError = validateUsernameFormat(username)
+    if (formatError) {
       return {
         available: false,
-        message: 'Tên đăng nhập phải từ 3 đến 30 ký tự, chỉ gồm chữ thường, chữ số, gạch ngang (-) hoặc gạch dưới (_).',
+        message: formatError,
       }
     }
+
+    const normalized = username.trim().toLowerCase()
 
     const existing = await accountRepository.findByUsername(normalized)
     if (existing && String(existing._id) !== userId) {

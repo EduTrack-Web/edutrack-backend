@@ -1,10 +1,44 @@
-import { AppError } from '../../../shared/errors/app-error.js'
+﻿import { AppError } from '../../../shared/errors/app-error.js'
 import type { ChangePasswordDto, ProfileSetupDto, UpdateProfileDto } from '../types/account.types.js'
 
 export const USERNAME_REGEX = /^[a-z0-9_-]{3,30}$/
 export const VIETNAM_PHONE_REGEX = /^(0[3|5|7|8|9])[0-9]{8}$/
 export const PASSWORD_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9])\S{8,64}$/
 export const VALID_USER_TYPES = ['student', 'pupil', 'worker', 'teacher', 'other'] as const
+
+export const VIETNAMESE_ACCENT_REGEX = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđĐ]/
+
+export const validateUsernameFormat = (username: string): string | null => {
+  const trimmed = username.trim()
+  if (!trimmed) {
+    return 'Tên đăng nhập không được để trống.'
+  }
+
+  const hasSpace = /\s/.test(username)
+  const hasAccent = VIETNAMESE_ACCENT_REGEX.test(username)
+
+  if (hasSpace && hasAccent) {
+    return 'Tên đăng nhập không được chứa khoảng trắng và dấu tiếng Việt.'
+  }
+
+  if (hasSpace) {
+    return 'Tên đăng nhập không được chứa khoảng trắng.'
+  }
+
+  if (hasAccent) {
+    return 'Tên đăng nhập không được chứa dấu tiếng Việt.'
+  }
+
+  if (trimmed.length < 3 || trimmed.length > 30) {
+    return 'Tên đăng nhập phải có độ dài từ 3 đến 30 ký tự.'
+  }
+
+  if (!/^[a-zA-Z0-9_-]+$/.test(trimmed)) {
+    return 'Tên đăng nhập chỉ gồm chữ cái không dấu, chữ số (0-9), gạch ngang (-) hoặc gạch dưới (_).'
+  }
+
+  return null
+}
 
 export const validateUpdateProfile = (body: unknown): UpdateProfileDto => {
   if (typeof body !== 'object' || body === null) {
@@ -31,14 +65,14 @@ export const validateUpdateProfile = (body: unknown): UpdateProfileDto => {
 
   // 2. Validate Tên đăng nhập (username)
   if ('username' in payload && payload.username !== undefined && payload.username !== null) {
-    if (typeof payload.username !== 'string' || payload.username.trim() === '') {
-      errors.username = 'Tên đăng nhập không được để trống.'
+    if (typeof payload.username !== 'string') {
+      errors.username = 'Tên đăng nhập không hợp lệ.'
     } else {
-      const normalizedUsername = payload.username.trim().toLowerCase()
-      if (!USERNAME_REGEX.test(normalizedUsername)) {
-        errors.username = 'Tên đăng nhập phải từ 3 đến 30 ký tự, chỉ gồm chữ thường, chữ số, gạch ngang (-) hoặc gạch dưới (_).'
+      const err = validateUsernameFormat(payload.username)
+      if (err) {
+        errors.username = err
       } else {
-        sanitized.username = normalizedUsername
+        sanitized.username = payload.username.trim().toLowerCase()
       }
     }
   }
@@ -131,11 +165,11 @@ export const validateProfileSetup = (body: unknown): ProfileSetupDto => {
     if (typeof payload.username !== 'string') {
       errors.username = 'Tên đăng nhập không hợp lệ.'
     } else {
-      const normalizedUsername = payload.username.trim().toLowerCase()
-      if (!USERNAME_REGEX.test(normalizedUsername)) {
-        errors.username = 'Tên đăng nhập phải từ 3 đến 30 ký tự, chỉ gồm chữ thường, chữ số, gạch ngang (-) hoặc gạch dưới (_).'
+      const err = validateUsernameFormat(payload.username)
+      if (err) {
+        errors.username = err
       } else {
-        sanitized.username = normalizedUsername
+        sanitized.username = payload.username.trim().toLowerCase()
       }
     }
   }
