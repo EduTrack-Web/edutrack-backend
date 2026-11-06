@@ -13,7 +13,7 @@ export const issueCsrfToken: RequestHandler = (_request, response) => {
     httpOnly: false,
     secure: env.nodeEnv === 'production',
     sameSite: env.nodeEnv === 'production' ? 'none' : 'lax',
-    maxAge: 2 * 60 * 60 * 1000,
+    maxAge: 7 * 24 * 60 * 60 * 1000,
     path: '/',
   })
   response.json({ success: true, data: { csrfToken: token } })

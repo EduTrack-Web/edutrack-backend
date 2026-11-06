@@ -22,7 +22,7 @@ export const seedDevelopmentUsers = async (): Promise<void> => {
           passwordHash,
           role: account.role,
           userType: account.role === 'admin' ? 'teacher' : 'student',
-          organization: 'Trường Đại học Sư phạm Kỹ thuật TP.HCM (HCMUTE)',
+          organization: 'Trường Đại học Công nghệ Kỹ thuật Thành phố Hồ Chí Minh (HCMUTE)',
           fieldOfStudy: 'Khoa học Tự nhiên & Công nghệ',
           profileCompleted: true,
           status: 'active',
