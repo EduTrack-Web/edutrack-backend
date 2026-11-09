@@ -13,10 +13,24 @@ import {
   sendFriendRequest,
   unblockUser,
 } from '../controllers/chat.controller.js'
+import {
+  createChatGroup,
+  createChatGroupInviteLink,
+  getChatGroup,
+  getChatGroups,
+  joinChatGroupByInvite,
+  previewChatGroupInvite,
+} from '../controllers/chat-groups.controller.js'
 
 export const chatRouter = Router()
 
 chatRouter.use(authenticate)
+chatRouter.get('/groups', getChatGroups)
+chatRouter.post('/groups', requireCsrf, createChatGroup)
+chatRouter.get('/groups/:groupId', getChatGroup)
+chatRouter.post('/groups/:groupId/invite-link', requireCsrf, createChatGroupInviteLink)
+chatRouter.get('/group-invites/:token', previewChatGroupInvite)
+chatRouter.post('/group-invites/:token/join', requireCsrf, joinChatGroupByInvite)
 chatRouter.get('/channels', getChannels)
 chatRouter.get('/friends', getFriends)
 chatRouter.get('/friends/search', searchFriendUsers)
