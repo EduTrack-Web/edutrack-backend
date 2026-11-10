@@ -1,13 +1,13 @@
 import { Types } from 'mongoose'
 
-import { UserModel } from '../../auth/models/user.model.js'
-import { ChatGroupInviteLinkModel } from '../models/chat-group-invite-link.model.js'
-import { ChatGroupInvitationModel } from '../models/chat-group-invitation.model.js'
-import { ChatGroupMemberModel } from '../models/chat-group-member.model.js'
-import { ChatGroupModel } from '../models/chat-group.model.js'
-import { FriendshipModel } from '../models/friendship.model.js'
-import { UserBlockModel } from '../models/user-block.model.js'
-import type { ChatGroupHistoryVisibility, ChatGroupRole } from '../config/chat.config.js'
+import { UserModel } from '@/modules/auth/models/user.model.js'
+import { ChatGroupInviteLinkModel } from '@/modules/chat/models/chat-group-invite-link.model.js'
+import { ChatGroupInvitationModel } from '@/modules/chat/models/chat-group-invitation.model.js'
+import { ChatGroupMemberModel } from '@/modules/chat/models/chat-group-member.model.js'
+import { ChatGroupModel } from '@/modules/chat/models/chat-group.model.js'
+import { FriendshipModel } from '@/modules/chat/models/friendship.model.js'
+import { UserBlockModel } from '@/modules/chat/models/user-block.model.js'
+import type { ChatGroupHistoryVisibility, ChatGroupRole } from '@/modules/chat/config/chat.config.js'
 
 export const chatGroupsRepository = {
   findActiveUserById: (userId: string) =>

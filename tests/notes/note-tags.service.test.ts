@@ -3,13 +3,13 @@ import test from 'node:test'
 
 import { Types } from 'mongoose'
 
-import { AppError } from '../../src/shared/errors/app-error.js'
+import { AppError } from '@/shared/errors/app-error.js'
 import {
   createNoteTagsService,
   normalizeTagName,
   type NoteAccessRepositoryContract,
   type NoteTagsRepositoryContract,
-} from '../../src/modules/notes/services/note-tags.service.js'
+} from '@/modules/notes/services/note-tags.service.js'
 
 const userId = new Types.ObjectId().toString()
 const noteId = new Types.ObjectId().toString()

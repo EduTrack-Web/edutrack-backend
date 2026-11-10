@@ -2,8 +2,8 @@ import { randomBytes, timingSafeEqual } from 'node:crypto'
 
 import type { RequestHandler } from 'express'
 
-import { env } from '../../config/env.js'
-import { AppError } from '../errors/app-error.js'
+import { env } from '@/config/env.js'
+import { AppError } from '@/shared/errors/app-error.js'
 
 export const CSRF_COOKIE = 'edutrack_csrf'
 

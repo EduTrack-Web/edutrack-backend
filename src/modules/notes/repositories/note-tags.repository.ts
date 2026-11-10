@@ -1,7 +1,7 @@
 import { Types } from 'mongoose'
 
-import { NoteTagAssignmentModel } from '../models/note-tag-assignment.model.js'
-import { NoteTagModel } from '../models/note-tag.model.js'
+import { NoteTagAssignmentModel } from '@/modules/notes/models/note-tag-assignment.model.js'
+import { NoteTagModel } from '@/modules/notes/models/note-tag.model.js'
 
 export const noteTagsRepository = {
   findTagsByUserId: (userId: string) =>

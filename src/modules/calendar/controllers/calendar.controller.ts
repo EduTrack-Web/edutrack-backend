@@ -1,5 +1,5 @@
 import type { RequestHandler } from 'express'
-import { calendarService } from '../services/calendar.service.js'
+import { calendarService } from '@/modules/calendar/services/calendar.service.js'
 
 export const getEvents: RequestHandler = async (_request, response) => {
   const auth = response.locals.auth as { userId: string } | undefined

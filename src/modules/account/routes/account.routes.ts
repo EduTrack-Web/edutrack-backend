@@ -1,9 +1,9 @@
 import { Router } from 'express'
 import multer from 'multer'
 
-import { AppError } from '../../../shared/errors/app-error.js'
-import { authenticate } from '../../../shared/middleware/authenticate.js'
-import { requireCsrf } from '../../../shared/middleware/csrf.js'
+import { AppError } from '@/shared/errors/app-error.js'
+import { authenticate } from '@/shared/middleware/authenticate.js'
+import { requireCsrf } from '@/shared/middleware/csrf.js'
 import {
   changePassword,
   checkUsername,
@@ -19,7 +19,7 @@ import {
   unlinkGoogle,
   updateProfile,
   uploadAvatar,
-} from '../controllers/account.controller.js'
+} from '@/modules/account/controllers/account.controller.js'
 
 const upload = multer({
   storage: multer.memoryStorage(),

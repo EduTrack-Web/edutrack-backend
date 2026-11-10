@@ -5,7 +5,7 @@ import {
   CHAT_GROUP_HISTORY_VALUES,
   CHAT_GROUP_NAME_MAX_LENGTH,
   CHAT_GROUP_NAME_MIN_LENGTH,
-} from '../config/chat.config.js'
+} from '@/modules/chat/config/chat.config.js'
 
 const chatGroupSchema = new Schema(
   {
