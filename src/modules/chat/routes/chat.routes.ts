@@ -1,6 +1,6 @@
 import { Router } from 'express'
-import { authenticate } from '../../../shared/middleware/authenticate.js'
-import { requireCsrf } from '../../../shared/middleware/csrf.js'
+import { authenticate } from '@/shared/middleware/authenticate.js'
+import { requireCsrf } from '@/shared/middleware/csrf.js'
 import {
   acceptFriendRequest,
   blockUser,
@@ -12,7 +12,7 @@ import {
   searchFriendUsers,
   sendFriendRequest,
   unblockUser,
-} from '../controllers/chat.controller.js'
+} from '@/modules/chat/controllers/chat.controller.js'
 import {
   createChatGroup,
   createChatGroupInviteLink,
@@ -20,7 +20,7 @@ import {
   getChatGroups,
   joinChatGroupByInvite,
   previewChatGroupInvite,
-} from '../controllers/chat-groups.controller.js'
+} from '@/modules/chat/controllers/chat-groups.controller.js'
 
 export const chatRouter = Router()
 

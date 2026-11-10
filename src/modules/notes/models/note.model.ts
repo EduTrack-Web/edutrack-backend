@@ -1,6 +1,6 @@
 import { Schema, model, type InferSchemaType } from 'mongoose'
 
-import { NOTE_BACKGROUND_VALUES, NOTE_DEFAULT_TITLE, NOTE_TITLE_MAX_LENGTH } from '../config/notes.config.js'
+import { NOTE_BACKGROUND_VALUES, NOTE_DEFAULT_TITLE, NOTE_TITLE_MAX_LENGTH } from '@/modules/notes/config/notes.config.js'
 
 const emptyDocument = () => ({ type: 'doc', content: [{ type: 'paragraph' }] })
 

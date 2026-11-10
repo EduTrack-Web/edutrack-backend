@@ -3,11 +3,11 @@ import test from 'node:test'
 
 import { Types } from 'mongoose'
 
-import { AppError } from '../../src/shared/errors/app-error.js'
+import { AppError } from '@/shared/errors/app-error.js'
 import {
   createChatGroupsService,
   type ChatGroupsRepositoryContract,
-} from '../../src/modules/chat/services/chat-groups.service.js'
+} from '@/modules/chat/services/chat-groups.service.js'
 
 const ownerId = new Types.ObjectId().toString()
 const friendId = new Types.ObjectId().toString()

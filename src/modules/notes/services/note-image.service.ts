@@ -2,16 +2,16 @@ import { Readable } from 'node:stream'
 
 import { v2 as cloudinary, type UploadApiResponse } from 'cloudinary'
 
-import { env } from '../../../config/env.js'
-import { AppError } from '../../../shared/errors/app-error.js'
+import { env } from '@/config/env.js'
+import { AppError } from '@/shared/errors/app-error.js'
 import {
   NOTE_IMAGE_ALLOWED_FORMATS,
   NOTE_IMAGE_ALLOWED_MIME_TYPES,
   NOTE_IMAGE_ERROR_MESSAGES,
   type NoteImageFormat,
   type NoteImageMimeType,
-} from '../config/notes.config.js'
-import type { NoteContentNode, NoteImageUploadResult } from '../types/notes.types.js'
+} from '@/modules/notes/config/notes.config.js'
+import type { NoteContentNode, NoteImageUploadResult } from '@/modules/notes/types/notes.types.js'
 
 interface UploadedImage {
   buffer: Buffer

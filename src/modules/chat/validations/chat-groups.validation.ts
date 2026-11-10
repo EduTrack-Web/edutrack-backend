@@ -1,6 +1,6 @@
 import { isValidObjectId } from 'mongoose'
 
-import { AppError } from '../../../shared/errors/app-error.js'
+import { AppError } from '@/shared/errors/app-error.js'
 import {
   CHAT_GROUP_DESCRIPTION_MAX_LENGTH,
   CHAT_GROUP_HISTORY_VALUES,
@@ -8,7 +8,7 @@ import {
   CHAT_GROUP_NAME_MAX_LENGTH,
   CHAT_GROUP_NAME_MIN_LENGTH,
   type ChatGroupHistoryVisibility,
-} from '../config/chat.config.js'
+} from '@/modules/chat/config/chat.config.js'
 
 export interface CreateChatGroupInput {
   name: string

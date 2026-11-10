@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { AppError } from '../../src/shared/errors/app-error.js'
-import { NOTE_IMAGE_MAX_SIZE_BYTES } from '../../src/modules/notes/config/notes.config.js'
-import { noteImageService } from '../../src/modules/notes/services/note-image.service.js'
+import { AppError } from '@/shared/errors/app-error.js'
+import { NOTE_IMAGE_MAX_SIZE_BYTES } from '@/modules/notes/config/notes.config.js'
+import { noteImageService } from '@/modules/notes/services/note-image.service.js'
 
 test('keeps the configured image limit at exactly 5 MB', () => {
   assert.equal(NOTE_IMAGE_MAX_SIZE_BYTES, 5 * 1024 * 1024)

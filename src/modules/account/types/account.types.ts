@@ -1,4 +1,4 @@
-import type { SafeUser, UserType } from '../../auth/types/auth.types.js'
+import type { SafeUser, UserType } from '@/modules/auth/types/auth.types.js'
 
 export interface UpdateProfileDto {
   fullName?: string

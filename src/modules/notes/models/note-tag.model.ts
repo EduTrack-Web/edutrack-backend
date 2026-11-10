@@ -4,7 +4,7 @@ import {
   NOTE_TAG_COLOR_PATTERN,
   NOTE_TAG_DEFAULT_COLOR,
   NOTE_TAG_NAME_MAX_LENGTH,
-} from '../config/notes.config.js'
+} from '@/modules/notes/config/notes.config.js'
 
 const noteTagSchema = new Schema(
   {

@@ -1,9 +1,9 @@
 import type { RequestHandler } from 'express'
 
-import type { AuthenticatedRequestLocals } from '../../../shared/middleware/authenticate.js'
-import { noteImageService } from '../services/note-image.service.js'
-import { noteTagsService } from '../services/note-tags.service.js'
-import { notesService } from '../services/notes.service.js'
+import type { AuthenticatedRequestLocals } from '@/shared/middleware/authenticate.js'
+import { noteImageService } from '@/modules/notes/services/note-image.service.js'
+import { noteTagsService } from '@/modules/notes/services/note-tags.service.js'
+import { notesService } from '@/modules/notes/services/notes.service.js'
 
 const userIdFrom = (locals: Record<string, unknown>): string =>
   (locals.auth as AuthenticatedRequestLocals).userId

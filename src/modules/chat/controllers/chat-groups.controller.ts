@@ -1,7 +1,7 @@
 import type { RequestHandler } from 'express'
 
-import type { AuthenticatedRequestLocals } from '../../../shared/middleware/authenticate.js'
-import { chatGroupsService } from '../services/chat-groups.service.js'
+import type { AuthenticatedRequestLocals } from '@/shared/middleware/authenticate.js'
+import { chatGroupsService } from '@/modules/chat/services/chat-groups.service.js'
 
 const userIdFrom = (locals: Record<string, unknown>): string =>
   (locals.auth as AuthenticatedRequestLocals).userId

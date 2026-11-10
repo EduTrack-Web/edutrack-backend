@@ -1,14 +1,14 @@
 import { isValidObjectId } from 'mongoose'
 
-import { AppError } from '../../../shared/errors/app-error.js'
-import { chatRepository } from '../repositories/chat.repository.js'
+import { AppError } from '@/shared/errors/app-error.js'
+import { chatRepository } from '@/modules/chat/repositories/chat.repository.js'
 import type {
   BlockedUserItem,
   ChatUserSummary,
   FriendRequestItem,
   FriendSearchResult,
   FriendshipSearchRelation,
-} from '../types/chat.types.js'
+} from '@/modules/chat/types/chat.types.js'
 
 const FRIEND_SEARCH_LIMIT = 20
 const FRIEND_QUERY_MAX_LENGTH = 254

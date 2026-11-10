@@ -1,14 +1,14 @@
 import type { RequestHandler } from 'express'
 
-import { AppError } from '../../../shared/errors/app-error.js'
-import { clearAuthCookies } from '../../auth/controllers/auth.controller.js'
-import { accountService } from '../services/account.service.js'
-import type { DeleteAccountDto, Disable2faDto } from '../types/account.types.js'
+import { AppError } from '@/shared/errors/app-error.js'
+import { clearAuthCookies } from '@/modules/auth/controllers/auth.controller.js'
+import { accountService } from '@/modules/account/services/account.service.js'
+import type { DeleteAccountDto, Disable2faDto } from '@/modules/account/types/account.types.js'
 import {
   validateChangePassword,
   validateProfileSetup,
   validateUpdateProfile,
-} from '../validations/account.validation.js'
+} from '@/modules/account/validations/account.validation.js'
 
 export const getProfile: RequestHandler = async (_req, res) => {
   const auth = res.locals.auth as { userId: string } | undefined

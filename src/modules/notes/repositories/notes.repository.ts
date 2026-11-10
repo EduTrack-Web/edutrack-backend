@@ -1,6 +1,6 @@
-import { NoteModel } from '../models/note.model.js'
-import type { NoteBackground } from '../config/notes.config.js'
-import type { NoteContentNode } from '../types/notes.types.js'
+import { NoteModel } from '@/modules/notes/models/note.model.js'
+import type { NoteBackground } from '@/modules/notes/config/notes.config.js'
+import type { NoteContentNode } from '@/modules/notes/types/notes.types.js'
 
 const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
