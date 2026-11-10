@@ -1,7 +1,7 @@
 import { Types } from 'mongoose'
 
-import { UserModel } from '../../auth/models/user.model.js'
-import { NoteShareModel } from '../models/note-share.model.js'
+import { UserModel } from '@/modules/auth/models/user.model.js'
+import { NoteShareModel } from '@/modules/notes/models/note-share.model.js'
 
 const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 

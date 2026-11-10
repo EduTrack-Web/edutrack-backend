@@ -1,5 +1,5 @@
-﻿import { AppError } from '../../../shared/errors/app-error.js'
-import type { ChangePasswordDto, ProfileSetupDto, UpdateProfileDto } from '../types/account.types.js'
+﻿import { AppError } from '@/shared/errors/app-error.js'
+import type { ChangePasswordDto, ProfileSetupDto, UpdateProfileDto } from '@/modules/account/types/account.types.js'
 
 export const USERNAME_REGEX = /^[a-z0-9_-]{3,30}$/
 export const VIETNAM_PHONE_REGEX = /^(0[3|5|7|8|9])[0-9]{8}$/

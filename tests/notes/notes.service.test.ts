@@ -3,8 +3,8 @@ import test from 'node:test'
 
 import { Types } from 'mongoose'
 
-import { AppError } from '../../src/shared/errors/app-error.js'
-import { NOTE_DEFAULT_TITLE } from '../../src/modules/notes/config/notes.config.js'
+import { AppError } from '@/shared/errors/app-error.js'
+import { NOTE_DEFAULT_TITLE } from '@/modules/notes/config/notes.config.js'
 import {
   createNotesService,
   sortNotesBySearchRelevance,
@@ -13,8 +13,8 @@ import {
   type NoteTagAssignmentContract,
   type NotesRepositoryContract,
   type PersistedNote,
-} from '../../src/modules/notes/services/notes.service.js'
-import type { NoteContentNode } from '../../src/modules/notes/types/notes.types.js'
+} from '@/modules/notes/services/notes.service.js'
+import type { NoteContentNode } from '@/modules/notes/types/notes.types.js'
 
 const ownerId = new Types.ObjectId().toString()
 const noteId = new Types.ObjectId().toString()

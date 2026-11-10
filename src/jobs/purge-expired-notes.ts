@@ -1,8 +1,8 @@
 import 'dotenv/config'
 
-import { connectDatabase, disconnectDatabase } from '../config/database.js'
-import { env } from '../config/env.js'
-import { notesService } from '../modules/notes/services/notes.service.js'
+import { connectDatabase, disconnectDatabase } from '@/config/database.js'
+import { env } from '@/config/env.js'
+import { notesService } from '@/modules/notes/services/notes.service.js'
 
 const purgeExpiredNotes = async (): Promise<void> => {
   if (!env.mongoUri) throw new Error('MONGODB_URI is required')

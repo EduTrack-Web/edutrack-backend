@@ -1,7 +1,7 @@
 import type { RequestHandler } from 'express'
 
-import type { AuthenticatedRequestLocals } from '../../../shared/middleware/authenticate.js'
-import { noteSharesService } from '../services/note-shares.service.js'
+import type { AuthenticatedRequestLocals } from '@/shared/middleware/authenticate.js'
+import { noteSharesService } from '@/modules/notes/services/note-shares.service.js'
 
 const userIdFrom = (locals: Record<string, unknown>): string =>
   (locals.auth as AuthenticatedRequestLocals).userId

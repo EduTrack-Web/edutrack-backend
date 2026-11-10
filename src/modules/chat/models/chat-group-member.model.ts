@@ -1,6 +1,6 @@
 import { Schema, model, type InferSchemaType } from 'mongoose'
 
-import { CHAT_GROUP_ROLE_VALUES } from '../config/chat.config.js'
+import { CHAT_GROUP_ROLE_VALUES } from '@/modules/chat/config/chat.config.js'
 
 const chatGroupMemberSchema = new Schema(
   {

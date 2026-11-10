@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { AppError } from '../../src/shared/errors/app-error.js'
+import { AppError } from '@/shared/errors/app-error.js'
 import {
   createChatService,
   type ChatFriendsRepositoryContract,
-} from '../../src/modules/chat/services/chat.service.js'
+} from '@/modules/chat/services/chat.service.js'
 
 const currentUserId = '000000000000000000000001'
 const friendUserId = '000000000000000000000002'

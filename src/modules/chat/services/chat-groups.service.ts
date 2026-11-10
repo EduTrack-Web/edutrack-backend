@@ -2,10 +2,10 @@ import { createHash, randomBytes } from 'node:crypto'
 
 import { isValidObjectId } from 'mongoose'
 
-import { env } from '../../../config/env.js'
-import { AppError } from '../../../shared/errors/app-error.js'
-import { CHAT_GROUP_INVITE_LIFETIME_MS, CHAT_GROUP_PERMISSIONS, type ChatGroupRole } from '../config/chat.config.js'
-import { chatGroupsRepository } from '../repositories/chat-groups.repository.js'
+import { env } from '@/config/env.js'
+import { AppError } from '@/shared/errors/app-error.js'
+import { CHAT_GROUP_INVITE_LIFETIME_MS, CHAT_GROUP_PERMISSIONS, type ChatGroupRole } from '@/modules/chat/config/chat.config.js'
+import { chatGroupsRepository } from '@/modules/chat/repositories/chat-groups.repository.js'
 import type {
   ChatGroupDetail,
   ChatGroupInvitePreview,
@@ -13,8 +13,8 @@ import type {
   ChatGroupMemberItem,
   ChatGroupSummary,
   ChatUserSummary,
-} from '../types/chat.types.js'
-import { validateCreateChatGroup } from '../validations/chat-groups.validation.js'
+} from '@/modules/chat/types/chat.types.js'
+import { validateCreateChatGroup } from '@/modules/chat/validations/chat-groups.validation.js'
 
 interface PersistedUser {
   _id: unknown

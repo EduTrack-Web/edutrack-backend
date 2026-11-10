@@ -1,9 +1,9 @@
 import { Types } from 'mongoose'
 
-import { UserModel } from '../../auth/models/user.model.js'
-import { FriendshipModel } from '../models/friendship.model.js'
-import { UserBlockModel } from '../models/user-block.model.js'
-import type { ChatChannelItem } from '../types/chat.types.js'
+import { UserModel } from '@/modules/auth/models/user.model.js'
+import { FriendshipModel } from '@/modules/chat/models/friendship.model.js'
+import { UserBlockModel } from '@/modules/chat/models/user-block.model.js'
+import type { ChatChannelItem } from '@/modules/chat/types/chat.types.js'
 
 const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 

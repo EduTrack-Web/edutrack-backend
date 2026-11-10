@@ -1,11 +1,11 @@
-import { AppError } from '../../../shared/errors/app-error.js'
-import { env } from '../../../config/env.js'
+import { AppError } from '@/shared/errors/app-error.js'
+import { env } from '@/config/env.js'
 import {
   NOTE_CONTENT_MAX_BYTES,
   NOTE_CONTENT_MAX_DEPTH,
   NOTE_CONTENT_MAX_NODES,
-} from '../config/notes.config.js'
-import type { NoteContentMark, NoteContentNode } from '../types/notes.types.js'
+} from '@/modules/notes/config/notes.config.js'
+import type { NoteContentMark, NoteContentNode } from '@/modules/notes/types/notes.types.js'
 
 const blockTypes = new Set(['paragraph', 'heading', 'bulletList', 'orderedList', 'taskList', 'image'])
 const inlineTypes = new Set(['text', 'hardBreak'])

@@ -1,8 +1,8 @@
 import type { RequestHandler } from 'express'
 import multer from 'multer'
 
-import { AppError } from '../../../shared/errors/app-error.js'
-import { NOTE_IMAGE_ERROR_MESSAGES, NOTE_IMAGE_MAX_SIZE_BYTES } from '../config/notes.config.js'
+import { AppError } from '@/shared/errors/app-error.js'
+import { NOTE_IMAGE_ERROR_MESSAGES, NOTE_IMAGE_MAX_SIZE_BYTES } from '@/modules/notes/config/notes.config.js'
 
 const upload = multer({
   storage: multer.memoryStorage(),
