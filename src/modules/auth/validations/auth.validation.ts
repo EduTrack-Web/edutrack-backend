@@ -1,4 +1,4 @@
-import { AppError } from '../../../shared/errors/app-error.js'
+import { AppError } from '@/shared/errors/app-error.js'
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const passwordPattern = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9])\S{8,64}$/

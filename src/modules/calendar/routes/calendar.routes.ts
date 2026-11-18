@@ -1,6 +1,6 @@
 import { Router } from 'express'
-import { authenticate } from '../../../shared/middleware/authenticate.js'
-import { requireCsrf } from '../../../shared/middleware/csrf.js'
+import { authenticate } from '@/shared/middleware/authenticate.js'
+import { requireCsrf } from '@/shared/middleware/csrf.js'
 import {
   createCategory,
   createEvent,
@@ -15,7 +15,7 @@ import {
   toggleTaskComplete,
   updateCategory,
   updateEvent,
-} from '../controllers/calendar.controller.js'
+} from '@/modules/calendar/controllers/calendar.controller.js'
 
 export const calendarRouter = Router()
 

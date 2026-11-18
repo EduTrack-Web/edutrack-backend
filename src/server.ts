@@ -2,10 +2,10 @@ import 'dotenv/config'
 
 import type { Server } from 'node:http'
 
-import { createApp } from './app.js'
-import { connectDatabase, disconnectDatabase } from './config/database.js'
-import { env } from './config/env.js'
-import { seedDevelopmentUsers } from './config/seed.js'
+import { createApp } from '@/app.js'
+import { connectDatabase, disconnectDatabase } from '@/config/database.js'
+import { env } from '@/config/env.js'
+import { seedDevelopmentUsers } from '@/config/seed.js'
 
 const startServer = async (): Promise<void> => {
   if (!env.mongoUri) {

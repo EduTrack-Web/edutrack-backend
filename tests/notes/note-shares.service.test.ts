@@ -3,12 +3,12 @@ import test from 'node:test'
 
 import { Types } from 'mongoose'
 
-import { AppError } from '../../src/shared/errors/app-error.js'
+import { AppError } from '@/shared/errors/app-error.js'
 import {
   createNoteSharesService,
   type NoteSharesRepositoryContract,
   type NotesAccessRepositoryContract,
-} from '../../src/modules/notes/services/note-shares.service.js'
+} from '@/modules/notes/services/note-shares.service.js'
 
 const ownerId = new Types.ObjectId().toString()
 const collaboratorId = new Types.ObjectId().toString()

@@ -1,6 +1,6 @@
-import { OtpModel } from '../../auth/models/otp.model.js'
-import { SessionModel } from '../../auth/models/session.model.js'
-import { UserModel } from '../../auth/models/user.model.js'
+import { OtpModel } from '@/modules/auth/models/otp.model.js'
+import { SessionModel } from '@/modules/auth/models/session.model.js'
+import { UserModel } from '@/modules/auth/models/user.model.js'
 
 export const accountRepository = {
   findById: (userId: string) => UserModel.findById(userId),

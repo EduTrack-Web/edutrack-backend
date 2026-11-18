@@ -1,7 +1,7 @@
 import type { RequestHandler } from 'express'
-import type { AuthenticatedRequestLocals } from '../../../shared/middleware/authenticate.js'
-import { calendarService } from '../services/calendar.service.js'
-import type { EventQueryFilters } from '../types/calendar.types.js'
+import type { AuthenticatedRequestLocals } from '@/shared/middleware/authenticate.js'
+import { calendarService } from '@/modules/calendar/services/calendar.service.js'
+import type { EventQueryFilters } from '@/modules/calendar/types/calendar.types.js'
 
 const userIdFrom = (locals: Record<string, unknown>): string =>
   (locals.auth as AuthenticatedRequestLocals).userId

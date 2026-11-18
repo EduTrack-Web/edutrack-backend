@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { AppError } from '../../src/shared/errors/app-error.js'
+import { AppError } from '@/shared/errors/app-error.js'
 import {
   extractNoteImagePublicIds,
   extractPlainText,
   validateNoteContent,
-} from '../../src/modules/notes/validation/note-content.validation.js'
+} from '@/modules/notes/validation/note-content.validation.js'
 
 test('accepts the supported Tiptap nodes and extracts searchable plain text', () => {
   const content = validateNoteContent({

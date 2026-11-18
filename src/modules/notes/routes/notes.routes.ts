@@ -1,7 +1,7 @@
 import { Router } from 'express'
 
-import { authenticate } from '../../../shared/middleware/authenticate.js'
-import { requireCsrf } from '../../../shared/middleware/csrf.js'
+import { authenticate } from '@/shared/middleware/authenticate.js'
+import { requireCsrf } from '@/shared/middleware/csrf.js'
 import {
   createNote,
   createTag,
@@ -20,14 +20,14 @@ import {
   updateTag,
   updateNote,
   uploadImage,
-} from '../controllers/notes.controller.js'
-import { uploadNoteImage } from '../middleware/note-image-upload.js'
+} from '@/modules/notes/controllers/notes.controller.js'
+import { uploadNoteImage } from '@/modules/notes/middleware/note-image-upload.js'
 import {
   getNoteCollaborators,
   removeNoteCollaborator,
   searchShareUsers,
   setNoteCollaborator,
-} from '../controllers/note-shares.controller.js'
+} from '@/modules/notes/controllers/note-shares.controller.js'
 
 export const notesRouter = Router()
 

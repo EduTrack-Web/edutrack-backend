@@ -1,4 +1,4 @@
-import type { NoteBackground } from '../config/notes.config.js'
+import type { NoteBackground } from '@/modules/notes/config/notes.config.js'
 
 export interface NoteContentMark {
   type: 'bold' | 'italic' | 'underline' | 'textStyle'

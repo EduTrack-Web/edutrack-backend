@@ -140,6 +140,7 @@ const mapEventResponse = (doc: RawEventDoc): CalendarEventResponse => {
   }
 }
 
+
 export const calendarService = {
   // CATEGORY SERVICES (LỊCH CỦA TÔI)
   getCategories: async (userId: string): Promise<CalendarCategoryResponse[]> => {

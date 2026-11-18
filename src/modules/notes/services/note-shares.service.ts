@@ -1,19 +1,19 @@
 import { isValidObjectId } from 'mongoose'
 
-import { AppError } from '../../../shared/errors/app-error.js'
+import { AppError } from '@/shared/errors/app-error.js'
 import {
   NOTE_SEARCH_QUERY_MAX_LENGTH,
   NOTE_SHARE_SEARCH_LIMIT,
   NOTE_SHARE_SEARCH_MIN_LENGTH,
-} from '../config/notes.config.js'
-import { noteSharesRepository } from '../repositories/note-shares.repository.js'
-import { notesRepository } from '../repositories/notes.repository.js'
+} from '@/modules/notes/config/notes.config.js'
+import { noteSharesRepository } from '@/modules/notes/repositories/note-shares.repository.js'
+import { notesRepository } from '@/modules/notes/repositories/notes.repository.js'
 import type {
   NoteAccess,
   NoteCollaborator,
   NotePermission,
   NoteShareUser,
-} from '../types/notes.types.js'
+} from '@/modules/notes/types/notes.types.js'
 
 interface PersistedAccessNote {
   _id: unknown

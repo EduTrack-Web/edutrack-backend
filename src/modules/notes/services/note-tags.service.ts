@@ -1,15 +1,15 @@
 import { isValidObjectId } from 'mongoose'
 
-import { AppError } from '../../../shared/errors/app-error.js'
+import { AppError } from '@/shared/errors/app-error.js'
 import {
   NOTE_TAG_COLOR_PATTERN,
   NOTE_TAG_DEFAULT_COLOR,
   NOTE_TAG_MAX_PER_NOTE,
   NOTE_TAG_NAME_MAX_LENGTH,
-} from '../config/notes.config.js'
-import { noteTagsRepository } from '../repositories/note-tags.repository.js'
-import { noteSharesService } from './note-shares.service.js'
-import type { NoteTag } from '../types/notes.types.js'
+} from '@/modules/notes/config/notes.config.js'
+import { noteTagsRepository } from '@/modules/notes/repositories/note-tags.repository.js'
+import { noteSharesService } from '@/modules/notes/services/note-shares.service.js'
+import type { NoteTag } from '@/modules/notes/types/notes.types.js'
 
 interface PersistedTag {
   _id: unknown

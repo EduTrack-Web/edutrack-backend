@@ -1,6 +1,6 @@
 import { isValidObjectId } from 'mongoose'
 
-import { AppError } from '../../../shared/errors/app-error.js'
+import { AppError } from '@/shared/errors/app-error.js'
 import {
   NOTE_BACKGROUND_VALUES,
   NOTE_DEFAULT_TITLE,
@@ -9,19 +9,19 @@ import {
   NOTE_TITLE_MAX_LENGTH,
   NOTE_TRASH_RETENTION_MS,
   type NoteBackground,
-} from '../config/notes.config.js'
-import { notesRepository } from '../repositories/notes.repository.js'
-import { noteTagsRepository } from '../repositories/note-tags.repository.js'
-import { noteImageService } from './note-image.service.js'
-import { noteSharesService, type ResolvedNoteAccess } from './note-shares.service.js'
-import type { NoteAccess, NoteContentNode, NoteDetail, NoteSummary, TrashedNoteSummary } from '../types/notes.types.js'
+} from '@/modules/notes/config/notes.config.js'
+import { notesRepository } from '@/modules/notes/repositories/notes.repository.js'
+import { noteTagsRepository } from '@/modules/notes/repositories/note-tags.repository.js'
+import { noteImageService } from '@/modules/notes/services/note-image.service.js'
+import { noteSharesService, type ResolvedNoteAccess } from '@/modules/notes/services/note-shares.service.js'
+import type { NoteAccess, NoteContentNode, NoteDetail, NoteSummary, TrashedNoteSummary } from '@/modules/notes/types/notes.types.js'
 import {
   createNoteContentPreview,
   extractNoteImagePublicIds,
   extractPlainText,
   validateNoteContent,
   validateNoteImageReferences,
-} from '../validation/note-content.validation.js'
+} from '@/modules/notes/validation/note-content.validation.js'
 
 const emptyDocument: NoteContentNode = { type: 'doc', content: [{ type: 'paragraph' }] }
 

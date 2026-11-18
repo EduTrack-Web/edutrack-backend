@@ -3,12 +3,12 @@ import path from 'node:path'
 import bcrypt from 'bcrypt'
 import { v2 as cloudinary } from 'cloudinary'
 
-import { env } from '../../../config/env.js'
-import { AppError } from '../../../shared/errors/app-error.js'
-import { issueOtp, verifyOtp } from '../../auth/services/auth.service.js'
-import { hashToken } from '../../auth/services/token.service.js'
-import type { SafeUser } from '../../auth/types/auth.types.js'
-import { accountRepository } from '../repositories/account.repository.js'
+import { env } from '@/config/env.js'
+import { AppError } from '@/shared/errors/app-error.js'
+import { issueOtp, verifyOtp } from '@/modules/auth/services/auth.service.js'
+import { hashToken } from '@/modules/auth/services/token.service.js'
+import type { SafeUser } from '@/modules/auth/types/auth.types.js'
+import { accountRepository } from '@/modules/account/repositories/account.repository.js'
 import type {
   ChangePasswordDto,
   DeleteAccountDto,
@@ -17,8 +17,8 @@ import type {
   SessionItemResponse,
   UpdateProfileDto,
   UserProfileResponse,
-} from '../types/account.types.js'
-import { validateUsernameFormat } from '../validations/account.validation.js'
+} from '@/modules/account/types/account.types.js'
+import { validateUsernameFormat } from '@/modules/account/validations/account.validation.js'
 
 const USERNAME_COOLDOWN_DAYS = 14
 const USERNAME_COOLDOWN_MS = USERNAME_COOLDOWN_DAYS * 24 * 60 * 60 * 1000
