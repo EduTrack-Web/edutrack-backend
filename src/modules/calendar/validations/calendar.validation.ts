@@ -1,9 +1,11 @@
 import { AppError } from '../../../shared/errors/app-error.js'
 import type {
+  CalendarSettings,
   CreateCategoryInput,
   CreateEventInput,
   EntryType,
   EventAvailability,
+  EventGuest,
   EventPriority,
   EventVisibility,
   RecurrenceConfig,
@@ -19,6 +21,7 @@ const VALID_PRIORITIES: readonly EventPriority[] = ['low', 'medium', 'high', 'ur
 const VALID_AVAILABILITY: readonly EventAvailability[] = ['busy', 'free']
 const VALID_VISIBILITY: readonly EventVisibility[] = ['default', 'public', 'private']
 const VALID_RECURRENCE: readonly string[] = [
+
   'none',
   'daily',
   'weekly',
@@ -27,6 +30,17 @@ const VALID_RECURRENCE: readonly string[] = [
   'weekdays',
   'custom',
 ]
+
+function isValidRecurrenceInput(rec: Record<string, unknown>, startDate: string | undefined): boolean {
+  const { frequency, interval, count, until, daysOfWeek } = rec
+  return typeof frequency === 'string' && VALID_RECURRENCE.includes(frequency)
+    && (interval === undefined || (typeof interval === 'number' && Number.isInteger(interval) && interval >= 1 && interval <= 99))
+    && (count == null || (typeof count === 'number' && Number.isInteger(count) && count >= 1 && count <= 365))
+    && (until == null || (typeof until === 'string' && Number.isFinite(Date.parse(until))
+      && (!startDate || Date.parse(until) >= Date.parse(startDate))))
+    && (daysOfWeek === undefined || (Array.isArray(daysOfWeek)
+      && daysOfWeek.every((day: unknown) => typeof day === 'number' && Number.isInteger(day) && day >= 0 && day <= 6)))
+}
 
 const isValidUrl = (url: string): boolean => {
   try {
@@ -37,10 +51,72 @@ const isValidUrl = (url: string): boolean => {
   }
 }
 
+function validateCalendarSettings(input: unknown, errors: Record<string, string>): CalendarSettings | undefined {
+  if (input === undefined) return undefined
+  const data = input && typeof input === 'object' ? input as Record<string, unknown> : {}
+  const { timeZone, weekStartsOn, workingHoursStart, workingHoursEnd, defaultDurationMinutes, reminders, privacy, archived, sharedWith } = data
+  if (typeof timeZone !== 'string' || timeZone.length > 100) {
+    errors.settings = 'Múi giờ không hợp lệ'
+    return undefined
+  }
+  try {
+    new Intl.DateTimeFormat(undefined, { timeZone })
+  } catch {
+    errors.settings = 'Múi giờ không hợp lệ'
+    return undefined
+  }
+  const timePattern = /^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/
+  const validWeekStart = (weekStartsOn === 0 || weekStartsOn === 1) ? weekStartsOn : 0
+  const validWorkStart = typeof workingHoursStart === 'string' && timePattern.test(workingHoursStart) ? workingHoursStart : '08:00'
+  const validWorkEnd = typeof workingHoursEnd === 'string' && timePattern.test(workingHoursEnd) ? workingHoursEnd : '17:00'
+
+  if (typeof defaultDurationMinutes !== 'number' || !Number.isInteger(defaultDurationMinutes)
+    || defaultDurationMinutes < 5 || defaultDurationMinutes > 1440
+    || typeof archived !== 'boolean' || !Array.isArray(reminders) || reminders.length > 10) {
+    errors.settings = 'Kiểm tra thời lượng mặc định (5–1440 phút) và danh sách thông báo.'
+    return undefined
+  }
+  const validatedReminders: ReminderItem[] = []
+  for (const item of reminders as unknown[]) {
+    const reminder = item && typeof item === 'object' ? item as Record<string, unknown> : {}
+    const { method, minutesBefore } = reminder
+    if ((method !== 'in-app' && method !== 'email') || typeof minutesBefore !== 'number'
+      || !Number.isInteger(minutesBefore) || minutesBefore < 0 || minutesBefore > 40320
+      || validatedReminders.some((entry) => entry.method === method && entry.minutesBefore === minutesBefore)) {
+      errors.settings = 'Mốc nhắc phải từ 0 đến 40320 phút và không được trùng kênh cùng thời điểm.'
+      return undefined
+    }
+    validatedReminders.push({ method, minutesBefore })
+  }
+  const validatedPrivacy = privacy === 'public' ? 'public' : 'private'
+
+  const validatedSharedWith = Array.isArray(sharedWith)
+    ? sharedWith
+        .filter((s): s is Record<string, unknown> => Boolean(s && typeof s === 'object' && typeof s.email === 'string'))
+        .map((s) => ({
+          email: (s.email as string).trim().toLowerCase(),
+          role: s.role === 'admin' ? ('admin' as const) : s.role === 'editor' ? ('editor' as const) : ('viewer' as const),
+        }))
+    : []
+
+  return {
+    timeZone,
+    weekStartsOn: validWeekStart,
+    workingHoursStart: validWorkStart,
+    workingHoursEnd: validWorkEnd,
+    defaultDurationMinutes,
+    reminders: validatedReminders,
+    privacy: validatedPrivacy,
+    archived,
+    sharedWith: validatedSharedWith,
+  }
+}
+
 export const validateCreateCategory = (input: unknown): CreateCategoryInput => {
   const errors: Record<string, string> = {}
   const data = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>
 
+  const settings = validateCalendarSettings(data.settings, errors)
   const rawName = typeof data.name === 'string' ? data.name.trim() : ''
   if (!rawName) {
     errors.name = 'Vui lòng nhập tên lịch'
@@ -66,6 +142,7 @@ export const validateCreateCategory = (input: unknown): CreateCategoryInput => {
     name: rawName,
     color: rawColor || '#2563EB',
     description: rawDescription,
+    settings,
   }
 }
 
@@ -73,6 +150,8 @@ export const validateUpdateCategory = (input: unknown): UpdateCategoryInput => {
   const errors: Record<string, string> = {}
   const data = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>
   const result: UpdateCategoryInput = {}
+  const settings = validateCalendarSettings(data.settings, errors)
+  if (settings) result.settings = settings
 
   if ('name' in data) {
     const rawName = typeof data.name === 'string' ? data.name.trim() : ''
@@ -112,6 +191,20 @@ export const validateUpdateCategory = (input: unknown): UpdateCategoryInput => {
   }
 
   return result
+}
+
+function parseGuests(guestsInput: unknown): EventGuest[] {
+  if (!Array.isArray(guestsInput)) return []
+  return guestsInput
+    .filter((g): g is Record<string, unknown> => Boolean(g && typeof g === 'object' && typeof g.email === 'string' && g.email.trim()))
+    .map((g) => ({
+      email: (g.email as string).trim().toLowerCase(),
+      role: g.role === 'editor' ? ('editor' as const) : ('viewer' as const),
+      canModify: Boolean(g.canModify),
+      canInviteOthers: g.canInviteOthers !== undefined ? Boolean(g.canInviteOthers) : true,
+      canSeeGuestList: g.canSeeGuestList !== undefined ? Boolean(g.canSeeGuestList) : true,
+      status: g.status === 'accepted' || g.status === 'declined' ? g.status : ('pending' as const),
+    }))
 }
 
 export const validateCreateEvent = (input: unknown): CreateEventInput => {
@@ -188,7 +281,6 @@ export const validateCreateEvent = (input: unknown): CreateEventInput => {
 
   const calendarId = typeof data.calendarId === 'string' && data.calendarId.trim() ? data.calendarId.trim() : null
 
-  // Checklist
   let validatedChecklist: SubtaskItem[] = []
   if (Array.isArray(data.checklist)) {
     validatedChecklist = data.checklist
@@ -201,7 +293,6 @@ export const validateCreateEvent = (input: unknown): CreateEventInput => {
       .filter((item) => item.title.length > 0)
   }
 
-  // Reminders (Hỗ trợ nhiều nhắc nhở)
   let validatedReminders: ReminderItem[] = [{ method: 'in-app', minutesBefore: 15 }]
   if (Array.isArray(data.reminders) && data.reminders.length > 0) {
     validatedReminders = data.reminders
@@ -212,10 +303,10 @@ export const validateCreateEvent = (input: unknown): CreateEventInput => {
       }))
   }
 
-  // Recurrence
   let validatedRecurrence: RecurrenceConfig | undefined
   if (data.recurrence && typeof data.recurrence === 'object') {
     const rec = data.recurrence as Record<string, unknown>
+    if (!isValidRecurrenceInput(rec, rawStartDate)) errors.recurrence = 'Quy tắc lặp lại không hợp lệ. Kiểm tra chu kỳ (1–99), ngày kết thúc và số lần lặp (1–365).'
     const freq = typeof rec.frequency === 'string' && VALID_RECURRENCE.includes(rec.frequency)
       ? (rec.frequency as RecurrenceConfig['frequency'])
       : 'none'
@@ -229,6 +320,9 @@ export const validateCreateEvent = (input: unknown): CreateEventInput => {
       }
     }
   }
+
+  const validatedGuests = parseGuests(data.guests)
+  const rawTimeZone = typeof data.timeZone === 'string' ? data.timeZone.trim() : ''
 
   if (Object.keys(errors).length > 0) {
     throw new AppError(400, 'EVENT_VALIDATION_ERROR', 'Thông tin sự kiện không hợp lệ', errors)
@@ -249,6 +343,8 @@ export const validateCreateEvent = (input: unknown): CreateEventInput => {
     color: rawColor,
     availability: rawAvailability,
     visibility: rawVisibility,
+    timeZone: rawTimeZone,
+    guests: validatedGuests,
     checklist: validatedChecklist,
     reminders: validatedReminders,
     recurrence: validatedRecurrence,
@@ -409,6 +505,7 @@ export const validateUpdateEvent = (input: unknown): UpdateEventInput => {
 
   if ('recurrence' in data && data.recurrence && typeof data.recurrence === 'object') {
     const rec = data.recurrence as Record<string, unknown>
+    if (!isValidRecurrenceInput(rec, result.startDate)) errors.recurrence = 'Quy tắc lặp lại không hợp lệ. Kiểm tra chu kỳ (1–99), ngày kết thúc và số lần lặp (1–365).'
     const freq = typeof rec.frequency === 'string' && VALID_RECURRENCE.includes(rec.frequency)
       ? (rec.frequency as RecurrenceConfig['frequency'])
       : 'none'
@@ -419,6 +516,14 @@ export const validateUpdateEvent = (input: unknown): UpdateEventInput => {
       until: typeof rec.until === 'string' ? rec.until : null,
       count: typeof rec.count === 'number' ? rec.count : null,
     }
+  }
+
+  if ('timeZone' in data && typeof data.timeZone === 'string') {
+    result.timeZone = data.timeZone.trim()
+  }
+
+  if ('guests' in data) {
+    result.guests = parseGuests(data.guests)
   }
 
   if (Object.keys(errors).length > 0) {

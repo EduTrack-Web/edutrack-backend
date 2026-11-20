@@ -10,7 +10,6 @@ import { authService } from '@/modules/auth/services/auth.service.js'
 import { accessMaxAge, refreshMaxAge, verifyAccessToken } from '@/modules/auth/services/token.service.js'
 import type { OtpPurpose } from '@/modules/auth/types/auth.types.js'
 import { requiredString, requiredStrings } from '@/modules/auth/validations/auth.validation.js'
-
 const ACCESS_COOKIE = 'edutrack_access'
 const REFRESH_COOKIE = 'edutrack_refresh'
 const GOOGLE_STATE_COOKIE = 'edutrack_google_state'
@@ -163,7 +162,13 @@ const requireGoogleConfig = () => {
 }
 
 export const startGoogleLogin: RequestHandler = (request, response) => {
-  const google = requireGoogleConfig()
+  let google: ReturnType<typeof requireGoogleConfig>
+  try {
+    google = requireGoogleConfig()
+  } catch (error: unknown) {
+    throw error
+  }
+
   const nonce = randomBytes(32).toString('base64url')
   const codeVerifier = randomBytes(64).toString('base64url')
   const codeChallenge = createHash('sha256').update(codeVerifier).digest('base64url')
@@ -175,8 +180,12 @@ export const startGoogleLogin: RequestHandler = (request, response) => {
     if (typeof accessToken !== 'string') {
       throw new AppError(401, 'AUTHENTICATION_REQUIRED', 'Vui lòng đăng nhập để liên kết tài khoản Google.')
     }
-    const auth = verifyAccessToken(accessToken)
-    actionValue = `link:${auth.userId}`
+    try {
+      const auth = verifyAccessToken(accessToken)
+      actionValue = `link:${auth.userId}`
+    } catch {
+      throw new AppError(401, 'AUTHENTICATION_REQUIRED', 'Phiên đăng nhập không hợp lệ hoặc đã hết hạn.')
+    }
   }
 
   const state = encodeOAuthState({ nonce, action: actionValue })
@@ -272,7 +281,7 @@ const processGoogleCallback = async (request: Request, response: Response): Prom
     return
   }
 
-  // 2. Luồng Đăng nhập Google thông thường
+  // 3. Luồng Đăng nhập Google thông thường
   const result = await authService.loginWithGoogle({
     googleId: data.sub,
     email: data.email,

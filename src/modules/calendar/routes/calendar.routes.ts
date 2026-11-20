@@ -6,9 +6,11 @@ import {
   createEvent,
   deleteCategory,
   deleteEvent,
+  exportCategory,
   getCategories,
   getEventById,
   getEvents,
+  importCategory,
   setAllCategoriesVisibility,
   setOnlyCategoryVisible,
   toggleCategoryVisibility,
@@ -16,12 +18,10 @@ import {
   updateCategory,
   updateEvent,
 } from '@/modules/calendar/controllers/calendar.controller.js'
-
 export const calendarRouter = Router()
 
 calendarRouter.use(authenticate)
 
-// Quản lý Lịch của tôi (Calendar Categories)
 calendarRouter.get('/categories', getCategories)
 calendarRouter.post('/categories', requireCsrf, createCategory)
 calendarRouter.patch('/categories/visibility/all', requireCsrf, setAllCategoriesVisibility)
@@ -29,8 +29,9 @@ calendarRouter.patch('/categories/:categoryId/only', requireCsrf, setOnlyCategor
 calendarRouter.put('/categories/:categoryId', requireCsrf, updateCategory)
 calendarRouter.patch('/categories/:categoryId/visibility', requireCsrf, toggleCategoryVisibility)
 calendarRouter.delete('/categories/:categoryId', requireCsrf, deleteCategory)
+calendarRouter.get('/categories/:categoryId/export', exportCategory)
+calendarRouter.post('/categories/:categoryId/import', requireCsrf, importCategory)
 
-// Quản lý Sự kiện & Nhiệm vụ (Events & Tasks)
 calendarRouter.get('/events', getEvents)
 calendarRouter.post('/events', requireCsrf, createEvent)
 calendarRouter.get('/events/:eventId', getEventById)

@@ -21,6 +21,37 @@ const calendarCategorySchema = new Schema(
       maxlength: 500,
       default: '',
     },
+    settings: {
+      type: new Schema({
+        timeZone: { type: String, required: true },
+        weekStartsOn: { type: Number, default: 0 },
+        workingHoursStart: { type: String, default: '08:00' },
+        workingHoursEnd: { type: String, default: '17:00' },
+        defaultDurationMinutes: { type: Number, required: true },
+        reminders: { type: [{ _id: false, method: String, minutesBefore: Number }], default: [] },
+        privacy: { type: String, enum: ['private', 'public'], default: 'private' },
+        archived: { type: Boolean, default: false },
+        sharedWith: {
+          type: [
+            new Schema({
+              email: { type: String, required: true, trim: true, lowercase: true },
+              role: { type: String, enum: ['viewer', 'editor', 'admin'], default: 'viewer' },
+            }, { _id: false })
+          ],
+          default: [],
+        },
+      }, { _id: false }),
+      default: undefined,
+    },
+    sharedWith: {
+      type: [
+        new Schema({
+          email: { type: String, required: true, trim: true, lowercase: true },
+          role: { type: String, enum: ['viewer', 'editor', 'admin'], default: 'viewer' },
+        }, { _id: false })
+      ],
+      default: [],
+    },
     isVisible: {
       type: Boolean,
       default: true,

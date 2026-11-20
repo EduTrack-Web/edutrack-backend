@@ -91,6 +91,24 @@ const eventSchema = new Schema(
       enum: ['default', 'public', 'private'],
       default: 'default',
     },
+    timeZone: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    guests: {
+      type: [
+        new Schema({
+          email: { type: String, required: true, trim: true, lowercase: true },
+          role: { type: String, enum: ['viewer', 'editor'], default: 'viewer' },
+          canModify: { type: Boolean, default: false },
+          canInviteOthers: { type: Boolean, default: true },
+          canSeeGuestList: { type: Boolean, default: true },
+          status: { type: String, enum: ['pending', 'accepted', 'declined'], default: 'pending' },
+        }, { _id: false })
+      ],
+      default: [],
+    },
     isCompleted: {
       type: Boolean,
       default: false,
@@ -130,6 +148,10 @@ const eventSchema = new Schema(
         type: Number,
         default: null,
       },
+    },
+    exceptionDates: {
+      type: [Date],
+      default: [],
     },
   },
   { timestamps: true, versionKey: false },
