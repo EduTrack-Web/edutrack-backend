@@ -11,15 +11,8 @@ import type {
 
 const isValidObjectId = (id: string): boolean => Types.ObjectId.isValid(id)
 
-// Chỉ giữ 1 mẫu sẵn duy nhất là 'Công việc' theo yêu cầu người dùng
-const DEFAULT_CATEGORIES = [
-  { name: 'Lịch của tôi', color: '#EAB308', description: 'Lịch cá nhân mặc định', isDefault: true },
-]
-
 export const calendarRepository = {
-  // CATEGORY / MY CALENDARS METHODS
   findCategoriesByUserId: async (userId: string) => {
-    // Tự động dọn dẹp các lịch mẫu cũ theo yêu cầu người dùng
     const legacyNames = [
       'Bài tập & Hạn chót',
       'Tự học - Try hard',
@@ -40,7 +33,6 @@ export const calendarRepository = {
 
     let categories = await CalendarCategoryModel.find({ userId }).sort({ createdAt: 1 }).lean()
 
-    // Khởi tạo lịch mặc định duy nhất: 'Lịch của tôi' với màu vàng nếu chưa có
     const hasDefault = categories.some((c) => c.isDefault)
     if (!hasDefault) {
       const existingMyCal = categories.find((c) => c.name.toLowerCase() === 'lịch của tôi')
@@ -79,6 +71,7 @@ export const calendarRepository = {
       userId,
       name: data.name,
       color: data.color ?? '#2563EB',
+      settings: data.settings,
       description: data.description ?? '',
       isVisible: true,
       isDefault: false,
@@ -124,7 +117,6 @@ export const calendarRepository = {
     return CalendarCategoryModel.findOneAndDelete({ _id: categoryId, userId }).lean()
   },
 
-  // EVENT REPOSITORY METHODS
   findEvents: (userId: string, filters: EventQueryFilters = {}) => {
     const query: Record<string, unknown> = { userId }
 
