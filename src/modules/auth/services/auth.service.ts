@@ -3,6 +3,7 @@ import { randomInt } from 'node:crypto'
 import bcrypt from 'bcrypt'
 
 import { AppError } from '@/shared/errors/app-error.js'
+import { avatarStorageService, shouldImportGoogleAvatar } from '@/shared/services/avatar-storage.service.js'
 import { authRepository } from '@/modules/auth/repositories/auth.repository.js'
 import type { OtpPurpose, SafeUser } from '@/modules/auth/types/auth.types.js'
 import { sendOtpEmail } from '@/modules/auth/services/email.service.js'
@@ -126,7 +127,7 @@ export const authService = {
   async verifyRegistration(otpId: string, code: string) {
     const otp = await verifyOtp(otpId, code, 'registration')
     const { UserModel } = await import('@/modules/auth/models/user.model.js')
-    const updated = await UserModel.findByIdAndUpdate(otp.userId, { status: 'active', emailVerified: true }, { new: true })
+    const updated = await UserModel.findByIdAndUpdate(otp.userId, { status: 'active', emailVerified: true }, { returnDocument: 'after' })
     if (!updated) throw new AppError(404, 'USER_NOT_FOUND', 'Không tìm thấy tài khoản.')
     return toSafeUser(updated)
   },
@@ -235,13 +236,18 @@ export const authService = {
         email: normalizeEmail(profile.email),
         username: await createUsername(profile.fullName),
         googleId: profile.googleId,
-        ...(profile.avatarUrl ? { avatarUrl: profile.avatarUrl } : {}),
         role: 'user',
         status: 'active',
         emailVerified: true,
       })
     }
     if (user.status === 'locked') throw new AppError(423, 'ACCOUNT_LOCKED', 'Tài khoản đã bị khóa.')
+
+    if (shouldImportGoogleAvatar(user.avatarUrl, profile.avatarUrl)) {
+      const storedAvatarUrl = await avatarStorageService.importGoogleAvatar(String(user._id), profile.avatarUrl)
+      user.avatarUrl = storedAvatarUrl
+    }
+
     user.lastLoginAt = new Date()
     await user.save()
     return { user: toSafeUser(user), tokens: await createSession(user, context) }
