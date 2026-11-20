@@ -6,7 +6,6 @@ import type { EventQueryFilters } from '@/modules/calendar/types/calendar.types.
 const userIdFrom = (locals: Record<string, unknown>): string =>
   (locals.auth as AuthenticatedRequestLocals).userId
 
-// CATEGORY CONTROLLERS (LỊCH CỦA TÔI)
 export const getCategories: RequestHandler = async (_request, response) => {
   const userId = userIdFrom(response.locals)
   const categories = await calendarService.getCategories(userId)
@@ -93,7 +92,34 @@ export const deleteCategory: RequestHandler = async (request, response) => {
   })
 }
 
-// EVENT CONTROLLERS
+export const exportCategory: RequestHandler = async (request, response) => {
+  const userId = userIdFrom(response.locals)
+  const { categoryId } = request.params
+  const { icsContent, filename } = await calendarService.exportCategoryIcs(
+    userId,
+    typeof categoryId === 'string' ? categoryId : '',
+  )
+  response.setHeader('Content-Type', 'text/calendar; charset=utf-8')
+  response.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+  response.send(icsContent)
+}
+
+export const importCategory: RequestHandler = async (request, response) => {
+  const userId = userIdFrom(response.locals)
+  const { categoryId } = request.params
+  const icsContent = typeof request.body?.icsContent === 'string' ? request.body.icsContent : ''
+  const result = await calendarService.importCategoryIcs(
+    userId,
+    typeof categoryId === 'string' ? categoryId : '',
+    icsContent,
+  )
+  response.status(201).json({
+    success: true,
+    data: result,
+    message: `Đã nhập thành công ${result.importedCount} sự kiện vào lịch.`,
+  })
+}
+
 export const getEvents: RequestHandler = async (request, response) => {
   const userId = userIdFrom(response.locals)
 
@@ -162,7 +188,9 @@ export const updateEvent: RequestHandler = async (request, response) => {
 export const deleteEvent: RequestHandler = async (request, response) => {
   const userId = userIdFrom(response.locals)
   const { eventId } = request.params
-  await calendarService.deleteEvent(userId, typeof eventId === 'string' ? eventId : '')
+  const mode = request.query.mode as 'this' | 'following' | 'all' | undefined
+  const date = typeof request.query.date === 'string' ? request.query.date : undefined
+  await calendarService.deleteEvent(userId, typeof eventId === 'string' ? eventId : '', mode, date)
   response.json({
     success: true,
     data: null,
