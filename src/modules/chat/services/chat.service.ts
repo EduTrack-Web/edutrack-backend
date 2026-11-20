@@ -12,6 +12,7 @@ import type {
 
 const FRIEND_SEARCH_LIMIT = 20
 const FRIEND_QUERY_MAX_LENGTH = 254
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 interface PersistedUser {
   _id: unknown
@@ -47,6 +48,7 @@ export interface ChatFriendsRepositoryContract {
   findAcceptedFriendshipsForUser: (userId: string) => PromiseLike<unknown[]>
   acceptFriendRequest: (requestId: string, userId: string) => PromiseLike<unknown | null>
   declineFriendRequest: (requestId: string, userId: string) => PromiseLike<unknown | null>
+  revokeFriendRequest: (requestId: string, userId: string) => PromiseLike<unknown | null>
   deleteRelationshipBetween: (userAId: string, userBId: string) => PromiseLike<unknown>
   findBlocksForUser: (userId: string) => PromiseLike<unknown[]>
   findBlocksByBlocker: (userId: string) => PromiseLike<unknown[]>
@@ -88,6 +90,11 @@ const normalizeQuery = (rawQuery: unknown): string => {
   if (query.length > FRIEND_QUERY_MAX_LENGTH) {
     throw new AppError(422, 'VALIDATION_ERROR', 'Dữ liệu không hợp lệ.', {
       query: `Username hoặc email không được vượt quá ${FRIEND_QUERY_MAX_LENGTH} ký tự.`,
+    })
+  }
+  if (query.includes('@') && !emailPattern.test(query)) {
+    throw new AppError(422, 'VALIDATION_ERROR', 'Dữ liệu không hợp lệ.', {
+      query: 'Email không đúng định dạng. Ví dụ: ten@example.com.',
     })
   }
   return query
@@ -286,6 +293,13 @@ export const createChatService = (repository: ChatFriendsRepositoryContract) => 
       requireRequestId(requestId)
       const deleted = await repository.declineFriendRequest(requestId, userId)
       if (!deleted) throw new AppError(404, 'FRIEND_REQUEST_NOT_FOUND', 'Không tìm thấy lời mời kết bạn.')
+    },
+
+    async revokeFriendRequest(userId: string, requestId: string): Promise<void> {
+      await requireActiveUser(userId)
+      requireRequestId(requestId)
+      const deleted = await repository.revokeFriendRequest(requestId, userId)
+      if (!deleted) throw new AppError(404, 'FRIEND_REQUEST_NOT_FOUND', 'Không tìm thấy lời mời kết bạn đang chờ để thu hồi.')
     },
 
     async getBlockedUsers(userId: string): Promise<BlockedUserItem[]> {

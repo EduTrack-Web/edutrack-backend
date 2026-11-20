@@ -3,6 +3,7 @@ import { isValidObjectId } from 'mongoose'
 import { AppError } from '@/shared/errors/app-error.js'
 import {
   CHAT_GROUP_DESCRIPTION_MAX_LENGTH,
+  CHAT_GROUP_DEFAULT_HISTORY_VISIBILITY,
   CHAT_GROUP_HISTORY_VALUES,
   CHAT_GROUP_MIN_SELECTED_USERS,
   CHAT_GROUP_NAME_MAX_LENGTH,
@@ -36,7 +37,7 @@ export const validateCreateChatGroup = (input: unknown): CreateChatGroupInput =>
     ? [...new Set(input.participantIds.filter((value): value is string => typeof value === 'string'))]
     : []
   const historyVisibility = input.historyVisibility === undefined
-    ? 'from_join'
+    ? CHAT_GROUP_DEFAULT_HISTORY_VISIBILITY
     : input.historyVisibility
 
   if (name.length < CHAT_GROUP_NAME_MIN_LENGTH || name.length > CHAT_GROUP_NAME_MAX_LENGTH) {

@@ -54,6 +54,14 @@ export const declineFriendRequest: RequestHandler = async (request, response) =>
   response.json({ success: true, data: {}, message: 'Đã từ chối lời mời kết bạn.' })
 }
 
+export const revokeFriendRequest: RequestHandler = async (request, response) => {
+  await chatService.revokeFriendRequest(
+    userIdFrom(response.locals),
+    pathValue(request.params.requestId),
+  )
+  response.json({ success: true, data: {}, message: 'Đã thu hồi lời mời kết bạn.' })
+}
+
 export const getBlockedUsers: RequestHandler = async (_request, response) => {
   const users = await chatService.getBlockedUsers(userIdFrom(response.locals))
   response.json({ success: true, data: { users } })

@@ -50,6 +50,7 @@ const createRepository = (
   deleteGroupBundle: async () => undefined,
   findMembershipsByUser: async () => [],
   findGroupsByIds: async () => [],
+  findLatestMessagesByGroupIds: async () => [],
   findMembersByGroupIds: async () => [],
   findPendingInvitationsByGroupIds: async () => [],
   findGroupById: async () => group(),
@@ -90,6 +91,38 @@ test('requires at least two selected users and validates all group fields', asyn
   )
 })
 
+test('includes the latest sender and message in each group summary', async () => {
+  const latestMessageId = new Types.ObjectId()
+  const repository = createRepository({
+    findMembershipsByUser: async () => [{
+      groupId: new Types.ObjectId(groupId),
+      userId: new Types.ObjectId(ownerId),
+      role: 'owner',
+      joinedAt: new Date(now.getTime() - 60_000),
+    }],
+    findGroupsByIds: async () => [group({ historyVisibility: 'all' })],
+    findMembersByGroupIds: async () => [
+      { groupId: new Types.ObjectId(groupId), userId: new Types.ObjectId(ownerId) },
+      { groupId: new Types.ObjectId(groupId), userId: new Types.ObjectId(friendId) },
+    ],
+    findLatestMessagesByGroupIds: async () => [{
+      _id: latestMessageId,
+      groupId: new Types.ObjectId(groupId),
+      senderId: new Types.ObjectId(friendId),
+      content: 'Nhớ họp nhóm lúc 14 giờ',
+      createdAt: now,
+    }],
+    findActiveUsersByIds: async (userIds) => userIds.map((userId) => user(userId, userId === friendId ? 'friend' : 'owner')),
+  })
+
+  const result = await createService(repository).getGroups(ownerId)
+
+  assert.equal(result[0]?.lastMessage?.id, String(latestMessageId))
+  assert.equal(result[0]?.lastMessage?.content, 'Nhớ họp nhóm lúc 14 giờ')
+  assert.equal(result[0]?.lastMessage?.sender.id, friendId)
+  assert.equal(result[0]?.lastMessage?.isOwn, false)
+})
+
 test('adds friends immediately, keeps strangers invited and creates one seven-day link', async () => {
   let insertedMembers: Array<{ userId: string; role: string }> = []
   let insertedInvitations: Array<{ inviteeId: string }> = []
@@ -114,7 +147,7 @@ test('adds friends immediately, keeps strangers invited and creates one seven-da
   assert.deepEqual(insertedInvitations.map((item) => item.inviteeId), [strangerId])
   assert.equal(result.group.memberCount, 2)
   assert.equal(result.group.pendingInvitationCount, 1)
-  assert.equal(result.group.historyVisibility, 'from_join')
+  assert.equal(result.group.historyVisibility, 'all')
   assert.equal(result.invite.url, `http://localhost:5173/chat/join/${token}`)
   assert.equal(inviteExpiresAt?.getTime(), now.getTime() + 7 * 24 * 60 * 60 * 1_000)
 })

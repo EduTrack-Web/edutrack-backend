@@ -76,7 +76,7 @@ export const chatRepository = {
         $or: [{ userAId: userId }, { userBId: userId }],
       },
       { $set: { status: 'accepted', acceptedAt: new Date() } },
-      { new: true, runValidators: true },
+      { returnDocument: 'after', runValidators: true },
     ).lean(),
 
   declineFriendRequest: (requestId: string, userId: string) =>
@@ -84,6 +84,14 @@ export const chatRepository = {
       _id: requestId,
       status: 'pending',
       requestedById: { $ne: userId },
+      $or: [{ userAId: userId }, { userBId: userId }],
+    }).lean(),
+
+  revokeFriendRequest: (requestId: string, userId: string) =>
+    FriendshipModel.findOneAndDelete({
+      _id: requestId,
+      status: 'pending',
+      requestedById: userId,
       $or: [{ userAId: userId }, { userBId: userId }],
     }).lean(),
 
@@ -108,7 +116,7 @@ export const chatRepository = {
     UserBlockModel.findOneAndUpdate(
       { blockerId, blockedId },
       { $setOnInsert: { blockerId, blockedId } },
-      { new: true, upsert: true, runValidators: true },
+      { returnDocument: 'after', upsert: true, runValidators: true },
     ).lean(),
 
   deleteBlock: (blockerId: string, blockedId: string) =>

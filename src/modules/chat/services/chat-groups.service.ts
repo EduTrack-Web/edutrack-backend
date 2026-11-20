@@ -7,6 +7,7 @@ import { AppError } from '@/shared/errors/app-error.js'
 import { CHAT_GROUP_INVITE_LIFETIME_MS, CHAT_GROUP_PERMISSIONS, type ChatGroupRole } from '@/modules/chat/config/chat.config.js'
 import { chatGroupsRepository } from '@/modules/chat/repositories/chat-groups.repository.js'
 import type {
+  ChatConversationLastMessage,
   ChatGroupDetail,
   ChatGroupInvitePreview,
   ChatGroupInviteResult,
@@ -45,6 +46,14 @@ interface PersistedInvitation {
   _id: unknown
   groupId: unknown
   inviteeId: unknown
+  createdAt?: Date
+}
+
+interface PersistedMessage {
+  _id: unknown
+  groupId: unknown
+  senderId: unknown
+  content: string
   createdAt?: Date
 }
 
@@ -91,6 +100,7 @@ export interface ChatGroupsRepositoryContract {
   deleteGroupBundle: (groupId: string) => PromiseLike<void>
   findMembershipsByUser: (userId: string) => PromiseLike<unknown[]>
   findGroupsByIds: (groupIds: readonly string[]) => PromiseLike<unknown[]>
+  findLatestMessagesByGroupIds: (groupIds: readonly string[]) => PromiseLike<unknown[]>
   findMembersByGroupIds: (groupIds: readonly string[]) => PromiseLike<unknown[]>
   findPendingInvitationsByGroupIds: (groupIds: readonly string[]) => PromiseLike<unknown[]>
   findGroupById: (groupId: string) => PromiseLike<unknown | null>
@@ -191,6 +201,7 @@ export const createChatGroupsService = (
     role: ChatGroupRole,
     memberCount: number,
     pendingInvitationCount: number,
+    lastMessage?: ChatConversationLastMessage,
   ): ChatGroupSummary => ({
     id: String(group._id),
     name: group.name,
@@ -200,9 +211,30 @@ export const createChatGroupsService = (
     pendingInvitationCount,
     historyVisibility: group.historyVisibility,
     inviteLinksEnabled: group.inviteLinksEnabled,
+    ...(lastMessage ? { lastMessage } : {}),
     createdAt: group.createdAt?.toISOString() ?? new Date(0).toISOString(),
     updatedAt: group.updatedAt?.toISOString() ?? new Date(0).toISOString(),
   })
+
+  const toLastMessageSummary = (
+    message: PersistedMessage,
+    sender: ChatUserSummary | undefined,
+    currentUserId: string,
+  ): ChatConversationLastMessage | undefined => {
+    if (!message.createdAt) return undefined
+    const senderId = String(message.senderId)
+    return {
+      id: String(message._id),
+      content: message.content,
+      sender: sender ?? {
+        id: senderId,
+        fullName: 'Tài khoản không còn tồn tại',
+        username: 'tai-khoan-da-xoa',
+      },
+      isOwn: senderId === currentUserId,
+      createdAt: message.createdAt.toISOString(),
+    }
+  }
 
   const requireGroupMembership = async (groupId: string, userId: string) => {
     requireGroupId(groupId)
@@ -325,10 +357,22 @@ export const createChatGroupsService = (
       const memberships = await repository.findMembershipsByUser(userId)
       const groupIds = memberships.map((item) => String((item as PersistedMembership).groupId))
       if (groupIds.length === 0) return []
-      const [groups, counts] = await Promise.all([
+      const [groups, counts, latestMessagesRaw] = await Promise.all([
         repository.findGroupsByIds(groupIds),
         loadGroupCounts(groupIds),
+        repository.findLatestMessagesByGroupIds(groupIds),
       ])
+      const latestMessages = latestMessagesRaw as PersistedMessage[]
+      const senderIds = [...new Set(latestMessages.map((message) => String(message.senderId)))]
+      const senders = await repository.findActiveUsersByIds(senderIds)
+      const sendersById = new Map(senders.map((rawUser) => {
+        const sender = toUserSummary(rawUser)
+        return [sender.id, sender] as const
+      }))
+      const latestMessageByGroupId = new Map(latestMessages.map((message) => [
+        String(message.groupId),
+        message,
+      ] as const))
       const membershipByGroupId = new Map(memberships.map((item) => {
         const membership = item as PersistedMembership
         return [String(membership.groupId), membership]
@@ -337,11 +381,23 @@ export const createChatGroupsService = (
         const group = rawGroup as PersistedGroup
         const groupId = String(group._id)
         const membership = membershipByGroupId.get(groupId)
+        const latestMessage = latestMessageByGroupId.get(groupId)
+        const canSeeLatestMessage = latestMessage?.createdAt
+          && (group.historyVisibility === 'all'
+            || Boolean(membership
+              && latestMessage.createdAt.getTime() >= membership.joinedAt.getTime()))
         return toSummary(
           group,
           membership?.role ?? 'member',
           counts.memberCounts.get(groupId) ?? 0,
           counts.invitationCounts.get(groupId) ?? 0,
+          canSeeLatestMessage && latestMessage
+            ? toLastMessageSummary(
+              latestMessage,
+              sendersById.get(String(latestMessage.senderId)),
+              userId,
+            )
+            : undefined,
         )
       }).sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))
     },

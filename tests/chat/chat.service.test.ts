@@ -48,6 +48,7 @@ const createRepository = (
   findAcceptedFriendshipsForUser: async () => [],
   acceptFriendRequest: async () => null,
   declineFriendRequest: async () => null,
+  revokeFriendRequest: async () => null,
   deleteRelationshipBetween: async () => ({ deletedCount: 0 }),
   findBlocksForUser: async () => [],
   findBlocksByBlocker: async () => [],
@@ -82,6 +83,27 @@ test('returns fuzzy friend matches but only exact stranger matches', async () =>
   assert.deepEqual(exactResults.map((item) => item.username), ['an-stranger'])
   assert.equal(exactResults[0]?.exactMatch, true)
   assert.equal('email' in (exactResults[0] ?? {}), false)
+})
+
+test('returns an existing friend for an exact email search without exposing email', async () => {
+  const friend = user(friendUserId, 'nguyen-thi-huong-1234')
+  const repository = createRepository({
+    findAcceptedFriendshipsForUser: async () => [
+      friendship(currentUserId, friendUserId, currentUserId, 'accepted'),
+    ],
+    findActiveUserByExactIdentifier: async (identifier) =>
+      identifier === friend.email ? friend : null,
+    findActiveUsersByIds: async () => [friend],
+  })
+  const service = createChatService(repository)
+
+  const results = await service.searchUsers(currentUserId, friend.email)
+
+  assert.equal(results.length, 1)
+  assert.equal(results[0]?.id, friendUserId)
+  assert.equal(results[0]?.relation, 'friend')
+  assert.equal(results[0]?.exactMatch, true)
+  assert.equal('email' in (results[0] ?? {}), false)
 })
 
 test('hides users when either side has blocked the other', async () => {
@@ -166,6 +188,30 @@ test('accepts only a request resolved by the repository for its recipient', asyn
   const result = await service.acceptFriendRequest(currentUserId, requestId)
 
   assert.equal(result.id, friendUserId)
+})
+
+test('allows only the sender to revoke a pending friend request', async () => {
+  let capturedUserId = ''
+  const repository = createRepository({
+    revokeFriendRequest: async (_requestId, userId) => {
+      capturedUserId = userId
+      return friendship(currentUserId, strangerUserId, currentUserId, 'pending')
+    },
+  })
+  const service = createChatService(repository)
+
+  await service.revokeFriendRequest(currentUserId, requestId)
+
+  assert.equal(capturedUserId, currentUserId)
+})
+
+test('rejects revoking a friend request not sent by the current user', async () => {
+  const service = createChatService(createRepository())
+
+  await assert.rejects(
+    service.revokeFriendRequest(currentUserId, requestId),
+    (error: unknown) => error instanceof AppError && error.code === 'FRIEND_REQUEST_NOT_FOUND',
+  )
 })
 
 test('blocking removes an accepted or pending relationship', async () => {
