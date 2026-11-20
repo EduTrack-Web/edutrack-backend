@@ -1,9 +1,8 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import bcrypt from 'bcrypt'
-import { v2 as cloudinary } from 'cloudinary'
-
-import { env } from '@/config/env.js'
+import { AVATAR_CLOUDINARY_FOLDER, AVATAR_IMAGE_SIZE_PX, buildAvatarPublicId } from '@/shared/config/avatar-storage.config.js'
+import { cloudinary, isCloudinaryConfigured } from '@/shared/config/cloudinary.config.js'
 import { AppError } from '@/shared/errors/app-error.js'
 import { issueOtp, verifyOtp } from '@/modules/auth/services/auth.service.js'
 import { hashToken } from '@/modules/auth/services/token.service.js'
@@ -22,16 +21,6 @@ import { validateUsernameFormat } from '@/modules/account/validations/account.va
 
 const USERNAME_COOLDOWN_DAYS = 14
 const USERNAME_COOLDOWN_MS = USERNAME_COOLDOWN_DAYS * 24 * 60 * 60 * 1000
-
-// Cấu hình Cloudinary nếu đã có biến môi trường
-if (env.cloudinaryCloudName && env.cloudinaryApiKey && env.cloudinaryApiSecret) {
-  cloudinary.config({
-    cloud_name: env.cloudinaryCloudName,
-    api_key: env.cloudinaryApiKey,
-    api_secret: env.cloudinaryApiSecret,
-    secure: true,
-  })
-}
 
 const calculateUsernameCooldown = (lastChangedAt?: Date | null): { canChange: boolean; daysRemaining: number } => {
   if (!lastChangedAt) {
@@ -274,13 +263,20 @@ export const accountService = {
     let finalAvatarUrl: string
 
     // Nếu Cloudinary đã được cấu hình -> tải lên Cloudinary
-    if (env.cloudinaryCloudName && env.cloudinaryApiKey && env.cloudinaryApiSecret) {
+    if (isCloudinaryConfigured) {
       finalAvatarUrl = await new Promise<string>((resolve, reject) => {
         const uploadStream = cloudinary.uploader.upload_stream(
           {
-            folder: 'edutrack/avatars',
-            public_id: `avatar_${userId}_${Date.now()}`,
-            transformation: [{ width: 400, height: 400, crop: 'fill', gravity: 'face' }],
+            folder: AVATAR_CLOUDINARY_FOLDER,
+            public_id: buildAvatarPublicId(userId),
+            overwrite: true,
+            invalidate: true,
+            transformation: [{
+              width: AVATAR_IMAGE_SIZE_PX,
+              height: AVATAR_IMAGE_SIZE_PX,
+              crop: 'fill',
+              gravity: 'face',
+            }],
           },
           (error, result) => {
             if (error || !result) {

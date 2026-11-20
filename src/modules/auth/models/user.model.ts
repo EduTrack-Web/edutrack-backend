@@ -20,6 +20,7 @@ const userSchema = new Schema(
     failedLoginAttempts: { type: Number, default: 0, required: true, select: false },
     lockUntil: { type: Date, select: false },
     lastLoginAt: { type: Date },
+    lastActiveAt: { type: Date },
     lastUsernameChangedAt: { type: Date },
   },
   { timestamps: true },

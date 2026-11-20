@@ -45,7 +45,7 @@ export const noteSharesRepository = {
     NoteShareModel.findOneAndUpdate(
       { noteId, userId },
       { $set: { permission, grantedBy } },
-      { new: true, upsert: true, runValidators: true },
+      { returnDocument: 'after', upsert: true, runValidators: true },
     ).lean(),
 
   deleteShare: (noteId: string, userId: string) => NoteShareModel.deleteOne({ noteId, userId }),

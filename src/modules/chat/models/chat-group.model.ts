@@ -2,6 +2,7 @@ import { Schema, model, type InferSchemaType } from 'mongoose'
 
 import {
   CHAT_GROUP_DESCRIPTION_MAX_LENGTH,
+  CHAT_GROUP_DEFAULT_HISTORY_VISIBILITY,
   CHAT_GROUP_HISTORY_VALUES,
   CHAT_GROUP_NAME_MAX_LENGTH,
   CHAT_GROUP_NAME_MIN_LENGTH,
@@ -19,7 +20,7 @@ const chatGroupSchema = new Schema(
     description: { type: String, trim: true, maxlength: CHAT_GROUP_DESCRIPTION_MAX_LENGTH, default: '' },
     ownerId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     inviteLinksEnabled: { type: Boolean, required: true, default: true },
-    historyVisibility: { type: String, enum: CHAT_GROUP_HISTORY_VALUES, required: true, default: 'from_join' },
+    historyVisibility: { type: String, enum: CHAT_GROUP_HISTORY_VALUES, required: true, default: CHAT_GROUP_DEFAULT_HISTORY_VISIBILITY },
     status: { type: String, enum: ['active'], required: true, default: 'active' },
   },
   { timestamps: true },

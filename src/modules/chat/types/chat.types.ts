@@ -1,8 +1,3 @@
-export interface MessagePayload {
-  channelId: string
-  content: string
-}
-
 export interface ChatChannelItem {
   id: string
   name: string
@@ -34,6 +29,45 @@ export interface BlockedUserItem extends ChatUserSummary {
   blockedAt: string
 }
 
+export interface ChatConversationLastMessage {
+  id: string
+  content: string
+  sender: ChatUserSummary
+  isOwn: boolean
+  createdAt: string
+}
+
+export interface DirectConversationSummary {
+  id: string
+  participant: ChatUserSummary & {
+    isOnline: boolean
+    lastActiveAt?: string
+  }
+  lastMessage?: ChatConversationLastMessage
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ChatPresenceItem {
+  userId: string
+  isOnline: boolean
+  lastActiveAt?: string
+}
+
+export interface DirectChatMessageItem {
+  id: string
+  conversationId: string
+  clientMessageId: string
+  content: string
+  sender: ChatUserSummary
+  createdAt: string
+}
+
+export interface DirectChatMessagePage {
+  messages: DirectChatMessageItem[]
+  nextCursor: string | null
+}
+
 export type ChatGroupRole = 'owner' | 'manager' | 'member'
 export type ChatGroupHistoryVisibility = 'from_join' | 'all'
 
@@ -46,6 +80,7 @@ export interface ChatGroupSummary {
   pendingInvitationCount: number
   historyVisibility: ChatGroupHistoryVisibility
   inviteLinksEnabled: boolean
+  lastMessage?: ChatConversationLastMessage
   createdAt: string
   updatedAt: string
 }
@@ -77,5 +112,31 @@ export interface ChatGroupInvitePreview {
   group: Pick<ChatGroupSummary, 'id' | 'name' | 'description' | 'memberCount' | 'historyVisibility'>
   alreadyMember: boolean
   invitedDirectly: boolean
+}
+
+export interface ChatMessageItem {
+  id: string
+  groupId: string
+  clientMessageId: string
+  content: string
+  sender: ChatUserSummary
+  createdAt: string
+}
+
+export interface ChatMessagePage {
+  messages: ChatMessageItem[]
+  nextCursor: string | null
+}
+
+export type ChatSearchConversationType = 'direct' | 'group'
+
+export interface ChatMessageSearchResult {
+  messageId: string
+  conversationId: string
+  conversationType: ChatSearchConversationType
+  conversationName: string
+  content: string
+  sender: ChatUserSummary
+  createdAt: string
 }
 
