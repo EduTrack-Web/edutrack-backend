@@ -62,7 +62,7 @@ export const notesRepository = {
   ) => NoteModel.findOneAndUpdate(
     { _id: noteId, ownerId: userId, deletedAt: null },
     { $set: update, $inc: { version: 1 } },
-    { new: true, runValidators: true },
+    { returnDocument: 'after', runValidators: true },
   ),
 
   updateActiveNoteById: (
@@ -71,21 +71,21 @@ export const notesRepository = {
   ) => NoteModel.findOneAndUpdate(
     { _id: noteId, deletedAt: null },
     { $set: update, $inc: { version: 1 } },
-    { new: true, runValidators: true },
+    { returnDocument: 'after', runValidators: true },
   ),
 
   moveOwnedNoteToTrash: (userId: string, noteId: string, deletedAt: Date, purgeAt: Date) =>
     NoteModel.findOneAndUpdate(
       { _id: noteId, ownerId: userId, deletedAt: null },
       { $set: { deletedAt, purgeAt } },
-      { new: true, runValidators: true },
+      { returnDocument: 'after', runValidators: true },
     ),
 
   restoreOwnedNote: (userId: string, noteId: string) =>
     NoteModel.findOneAndUpdate(
       { _id: noteId, ownerId: userId, deletedAt: { $ne: null } },
       { $set: { deletedAt: null, purgeAt: null } },
-      { new: true, runValidators: true },
+      { returnDocument: 'after', runValidators: true },
     ),
 
   deleteOwnedTrashedNote: (userId: string, noteId: string) =>

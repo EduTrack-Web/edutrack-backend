@@ -20,7 +20,7 @@ export const noteTagsRepository = {
     NoteTagModel.findOneAndUpdate(
       { _id: tagId, ownerId: userId },
       { $set: { name, normalizedName, color } },
-      { new: true, runValidators: true },
+      { returnDocument: 'after', runValidators: true },
     ),
 
   deleteTag: (userId: string, tagId: string) =>

@@ -24,6 +24,7 @@
     "dev": "tsx watch src/server.ts",
     "test": "tsx --test tests/**/*.test.ts",
     "cleanup:notes": "tsx src/jobs/purge-expired-notes.ts",
+    "migrate:google-avatars": "tsx src/jobs/migrate-google-avatars.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc && tsc-alias",
     "start": "node dist/server.js"
@@ -43,7 +44,8 @@
     "mongoose": "^9.10.1",
     "multer": "^2.4.0",
     "multer-storage-cloudinary": "^2.2.1",
-    "nodemailer": "^10.3.1"
+    "nodemailer": "^10.3.1",
+    "socket.io": "^4.8.4"
   },
   "devDependencies": {
     "@babel/core": "^8.0.5",
