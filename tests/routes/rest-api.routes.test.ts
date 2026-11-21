@@ -21,15 +21,14 @@ const withServer = async (run: (baseUrl: string) => Promise<void>): Promise<void
   }
 }
 
-test('serves the RESTful API and the temporary legacy alias', async () => {
+test('serves only the RESTful API base path', async () => {
   await withServer(async (baseUrl) => {
     const restfulResponse = await fetch(`${baseUrl}/api/v1/auth/csrf-token`)
     const legacyResponse = await fetch(`${baseUrl}/v1/api/auth/csrf`)
 
     assert.equal(restfulResponse.status, 200)
-    assert.equal(legacyResponse.status, 200)
+    assert.equal(legacyResponse.status, 404)
     assert.equal((await restfulResponse.json() as { success?: unknown }).success, true)
-    assert.equal((await legacyResponse.json() as { success?: unknown }).success, true)
   })
 })
 

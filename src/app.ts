@@ -4,7 +4,7 @@ import express from 'express'
 import helmet from 'helmet'
 
 import { env } from '@/config/env.js'
-import { apiRouter, legacyApiRouter } from '@/routes/index.js'
+import { apiRouter } from '@/routes/index.js'
 import { errorHandler } from '@/shared/middleware/error-handler.js'
 import { notFoundHandler } from '@/shared/middleware/not-found.js'
 
@@ -21,7 +21,6 @@ export const createApp = (): express.Express => {
   app.use(express.static('public'))
 
   app.use('/api/v1', apiRouter)
-  app.use('/v1/api', legacyApiRouter)
   app.use(notFoundHandler)
   app.use(errorHandler)
 
