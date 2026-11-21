@@ -20,7 +20,7 @@ export const createApp = (): express.Express => {
   app.use(cookieParser())
   app.use(express.static('public'))
 
-  app.use('/v1/api', apiRouter)
+  app.use('/api/v1', apiRouter)
   app.use(notFoundHandler)
   app.use(errorHandler)
 

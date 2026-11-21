@@ -17,6 +17,8 @@ REST API dùng Express, TypeScript và MongoDB.
    - `GOOGLE_CALLBACK_URL`: callback đã khai báo trong Google Cloud Console.
 3. Chạy `npm run dev`.
 
+API RESTful dùng base URL `/api/v1`.
+
 ## Tài khoản development
 
 Khi `NODE_ENV=development`, server tạo hoặc cập nhật hai tài khoản:
