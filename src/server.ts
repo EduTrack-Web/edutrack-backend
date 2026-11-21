@@ -1,12 +1,16 @@
 import 'dotenv/config'
 
-import type { Server } from 'node:http'
+import { createServer } from 'node:http'
 
 import { createApp } from '@/app.js'
 import { connectDatabase, disconnectDatabase } from '@/config/database.js'
 import { env } from '@/config/env.js'
 import { seedDevelopmentUsers } from '@/config/seed.js'
 import { startReminderScheduler } from '@/jobs/reminder-scheduler.js'
+import {
+  CHAT_SOCKET_SERVER_KEY,
+  createChatSocketServer,
+} from '@/modules/chat/realtime/chat.realtime.js'
 
 const startServer = async (): Promise<void> => {
   if (!env.mongoUri) {
@@ -16,9 +20,11 @@ const startServer = async (): Promise<void> => {
   await connectDatabase(env.mongoUri)
   await seedDevelopmentUsers()
   const app = createApp()
-  let server: Server
+  const server = createServer(app)
+  const chatSocketServer = createChatSocketServer(server)
+  app.set(CHAT_SOCKET_SERVER_KEY, chatSocketServer)
 
-  server = app.listen(env.port, () => {
+  server.listen(env.port, () => {
     console.info(`EduTrack API is listening on port ${env.port}`)
   })
 
@@ -27,7 +33,9 @@ const startServer = async (): Promise<void> => {
   const shutdown = (signal: NodeJS.Signals): void => {
     console.info(`Received ${signal}, shutting down`)
     clearInterval(reminderTimer)
+    chatSocketServer.disconnectSockets(true)
     server.close(() => {
+      chatSocketServer.close()
       void disconnectDatabase().finally(() => process.exit(0))
     })
   }

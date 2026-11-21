@@ -5,6 +5,7 @@ import type { Request, RequestHandler, Response } from 'express'
 import { env } from '@/config/env.js'
 import { AppError } from '@/shared/errors/app-error.js'
 import { CSRF_COOKIE } from '@/shared/middleware/csrf.js'
+import { avatarStorageService, shouldImportGoogleAvatar } from '@/shared/services/avatar-storage.service.js'
 import { UserModel } from '@/modules/auth/models/user.model.js'
 import { authService } from '@/modules/auth/services/auth.service.js'
 import { accessMaxAge, refreshMaxAge, verifyAccessToken } from '@/modules/auth/services/token.service.js'
@@ -261,6 +262,9 @@ const processGoogleCallback = async (request: Request, response: Response): Prom
   // 1. Luồng Liên kết tài khoản Google
   if (actionData.startsWith('link:')) {
     const linkUserId = actionData.split(':')[1]
+    if (!linkUserId) {
+      throw new AppError(400, 'GOOGLE_STATE_INVALID', 'Phiên liên kết Google không hợp lệ hoặc đã hết hạn.')
+    }
     const existingLinkedUser = await UserModel.findOne({ googleId: data.sub })
     if (existingLinkedUser && String(existingLinkedUser._id) !== linkUserId) {
       throw new AppError(409, 'GOOGLE_ALREADY_LINKED', 'Tài khoản Google này đã được liên kết với một tài khoản EduTrack khác.')
@@ -272,8 +276,10 @@ const processGoogleCallback = async (request: Request, response: Response): Prom
     }
 
     userToLink.googleId = data.sub
-    if (!userToLink.avatarUrl && typeof data.picture === 'string') {
-      userToLink.avatarUrl = data.picture
+    const googleAvatarUrl = typeof data.picture === 'string' ? data.picture : undefined
+    if (googleAvatarUrl && shouldImportGoogleAvatar(userToLink.avatarUrl, googleAvatarUrl)) {
+      const storedAvatarUrl = await avatarStorageService.importGoogleAvatar(linkUserId, googleAvatarUrl)
+      userToLink.set('avatarUrl', storedAvatarUrl)
     }
     await userToLink.save()
 

@@ -16,13 +16,23 @@ export const accountRepository = {
     UserModel.findOne({ googleId }).select('+googleId'),
 
   updateUser: (userId: string, updates: Record<string, unknown>) =>
-    UserModel.findByIdAndUpdate(userId, { $set: updates }, { new: true, runValidators: true }),
+    UserModel.findByIdAndUpdate(userId, { $set: updates }, { returnDocument: 'after', runValidators: true }),
+
+  findUsersWithLegacyGoogleAvatar: () =>
+    UserModel.find({ avatarUrl: /googleusercontent\.com/i }).select('avatarUrl').cursor(),
+
+  setAvatarUrl: (userId: string, avatarUrl?: string) =>
+    UserModel.findByIdAndUpdate(
+      userId,
+      avatarUrl ? { $set: { avatarUrl } } : { $unset: { avatarUrl: 1 } },
+      { returnDocument: 'after' },
+    ),
 
   unlinkGoogle: (userId: string) =>
-    UserModel.findByIdAndUpdate(userId, { $unset: { googleId: 1 } }, { new: true }),
+    UserModel.findByIdAndUpdate(userId, { $unset: { googleId: 1 } }, { returnDocument: 'after' }),
 
   linkGoogle: (userId: string, googleId: string) =>
-    UserModel.findByIdAndUpdate(userId, { $set: { googleId } }, { new: true }),
+    UserModel.findByIdAndUpdate(userId, { $set: { googleId } }, { returnDocument: 'after' }),
 
   findActiveSessions: (userId: string) =>
     SessionModel.find({

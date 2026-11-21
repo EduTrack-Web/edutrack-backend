@@ -5,6 +5,7 @@ import { ChatGroupInviteLinkModel } from '@/modules/chat/models/chat-group-invit
 import { ChatGroupInvitationModel } from '@/modules/chat/models/chat-group-invitation.model.js'
 import { ChatGroupMemberModel } from '@/modules/chat/models/chat-group-member.model.js'
 import { ChatGroupModel } from '@/modules/chat/models/chat-group.model.js'
+import { ChatMessageModel } from '@/modules/chat/models/chat-message.model.js'
 import { FriendshipModel } from '@/modules/chat/models/friendship.model.js'
 import { UserBlockModel } from '@/modules/chat/models/user-block.model.js'
 import type { ChatGroupHistoryVisibility, ChatGroupRole } from '@/modules/chat/config/chat.config.js'
@@ -83,6 +84,16 @@ export const chatGroupsRepository = {
   findGroupsByIds: (groupIds: readonly string[]) =>
     ChatGroupModel.find({ _id: { $in: groupIds }, status: 'active' }).lean(),
 
+  findLatestMessagesByGroupIds: (groupIds: readonly string[]) => {
+    if (groupIds.length === 0) return Promise.resolve([])
+    return ChatMessageModel.aggregate([
+      { $match: { groupId: { $in: groupIds.map((id) => new Types.ObjectId(id)) } } },
+      { $sort: { createdAt: -1 as const, _id: -1 as const } },
+      { $group: { _id: '$groupId', message: { $first: '$$ROOT' } } },
+      { $replaceRoot: { newRoot: '$message' } },
+    ])
+  },
+
   findMembersByGroupIds: (groupIds: readonly string[]) =>
     ChatGroupMemberModel.find({ groupId: { $in: groupIds } }).lean(),
 
@@ -112,7 +123,7 @@ export const chatGroupsRepository = {
     ChatGroupInvitationModel.findOneAndUpdate(
       { groupId, inviteeId, status: 'pending' },
       { $set: { status: 'accepted', acceptedAt } },
-      { new: true },
+      { returnDocument: 'after' },
     ).lean(),
 
   toObjectIds: (values: readonly string[]) => values.map((value) => new Types.ObjectId(value)),
