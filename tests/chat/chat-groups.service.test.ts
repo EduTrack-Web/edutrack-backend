@@ -42,7 +42,7 @@ const createRepository = (
   findActiveUsersByIds: async (userIds) => userIds.map((userId) => user(userId, userId)),
   findAcceptedFriendships: async () => [],
   findBlocksBetween: async () => [],
-  createGroup: async () => group(),
+  createGroup: async (input) => group({ historyVisibility: input.historyVisibility }),
   insertMembers: async () => [],
   insertInvitations: async () => [],
   createInviteLink: async (input) => input,
