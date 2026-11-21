@@ -6,6 +6,7 @@ import { calendarRouter } from '@/modules/calendar/routes/calendar.routes.js'
 import { chatRouter } from '@/modules/chat/routes/chat.routes.js'
 import { healthRouter } from '@/modules/health/routes/health.routes.js'
 import { notesRouter } from '@/modules/notes/routes/notes.routes.js'
+import { notificationRouter } from '@/modules/notifications/routes/notification.routes.js'
 
 export const apiRouter = Router()
 
@@ -15,3 +16,4 @@ apiRouter.use('/account', accountRouter)
 apiRouter.use('/calendar', calendarRouter)
 apiRouter.use('/notes', notesRouter)
 apiRouter.use('/chat', chatRouter)
+apiRouter.use('/notifications', notificationRouter)

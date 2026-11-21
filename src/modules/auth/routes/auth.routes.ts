@@ -7,6 +7,7 @@ import { forgotPassword, handleGoogleCallback, login, logout, me, refresh, regis
 
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: 'draft-8', legacyHeaders: false })
 const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: 'draft-8', legacyHeaders: false })
+const refreshLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 120, standardHeaders: 'draft-8', legacyHeaders: false })
 
 export const authRouter = Router()
 
@@ -20,6 +21,6 @@ authRouter.post('/verify-two-factor', loginLimiter, requireCsrf, verifyTwoFactor
 authRouter.post('/forgot-password', authLimiter, requireCsrf, forgotPassword)
 authRouter.post('/resend-otp', authLimiter, requireCsrf, resendOtp)
 authRouter.post('/reset-password', authLimiter, requireCsrf, resetPassword)
-authRouter.post('/refresh', authLimiter, requireCsrf, refresh)
+authRouter.post('/refresh', refreshLimiter, requireCsrf, refresh)
 authRouter.post('/logout', authLimiter, requireCsrf, logout)
 authRouter.get('/me', authenticate, me)
