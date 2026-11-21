@@ -10,8 +10,9 @@ REST API dùng Express, TypeScript và MongoDB.
    - `CLIENT_ORIGINS`: các origin frontend, phân tách bằng dấu phẩy.
    - `FRONTEND_URL`: URL frontend dùng cho OAuth redirect.
    - `JWT_ACCESS_SECRET`: chuỗi ngẫu nhiên dài dùng ký access token.
-   - `EMAIL_USER`: tài khoản Gmail gửi OTP.
-   - `EMAIL_APP_PASSWORD`: App Password của Gmail, không phải mật khẩu Gmail thường.
+   - `RESEND_API_KEY`: API key bí mật của Resend, chỉ cấu hình ở backend.
+   - `RESEND_FROM_EMAIL`: địa chỉ người gửi thuộc domain đã xác minh trên Resend.
+   - `RESEND_FROM_NAME`: tên người gửi hiển thị, mặc định là `EduTrack`.
    - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`: thông tin OAuth Web Application.
    - `GOOGLE_CALLBACK_URL`: callback đã khai báo trong Google Cloud Console.
 3. Chạy `npm run dev`.

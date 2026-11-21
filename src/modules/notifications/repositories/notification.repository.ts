@@ -27,7 +27,7 @@ export const notificationRepository = {
     return NotificationModel.findOneAndUpdate(
       { _id: notificationId, $or: [{ userId: userObjectId }, { userId }] },
       { $set: { isRead: true } },
-      { new: true },
+      { returnDocument: 'after' },
     ).lean()
   },
 
