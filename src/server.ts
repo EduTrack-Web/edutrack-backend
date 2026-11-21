@@ -6,6 +6,7 @@ import { createApp } from '@/app.js'
 import { connectDatabase, disconnectDatabase } from '@/config/database.js'
 import { env } from '@/config/env.js'
 import { seedDevelopmentUsers } from '@/config/seed.js'
+import { startReminderScheduler } from '@/jobs/reminder-scheduler.js'
 import {
   CHAT_SOCKET_SERVER_KEY,
   createChatSocketServer,
@@ -27,8 +28,11 @@ const startServer = async (): Promise<void> => {
     console.info(`EduTrack API is listening on port ${env.port}`)
   })
 
+  const reminderTimer = startReminderScheduler()
+
   const shutdown = (signal: NodeJS.Signals): void => {
     console.info(`Received ${signal}, shutting down`)
+    clearInterval(reminderTimer)
     chatSocketServer.disconnectSockets(true)
     server.close(() => {
       chatSocketServer.close()
@@ -39,6 +43,14 @@ const startServer = async (): Promise<void> => {
   process.once('SIGINT', shutdown)
   process.once('SIGTERM', shutdown)
 }
+
+process.on('unhandledRejection', (reason: unknown) => {
+  console.error('[Process] Unhandled Rejection:', reason)
+})
+
+process.on('uncaughtException', (error: Error) => {
+  console.error('[Process] Uncaught Exception:', error)
+})
 
 void startServer().catch((error: unknown) => {
   console.error('Unable to start EduTrack API', error instanceof Error ? error.message : 'Unknown error')

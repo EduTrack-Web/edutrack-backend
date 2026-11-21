@@ -213,3 +213,30 @@ export const toggleTaskComplete: RequestHandler = async (request, response) => {
     message: isCompleted ? 'Đã đánh dấu hoàn thành nhiệm vụ.' : 'Đã mở lại nhiệm vụ.',
   })
 }
+
+export const respondEventInvitation: RequestHandler = async (request, response) => {
+  const userId = userIdFrom(response.locals)
+  const { eventId } = request.params
+  const status = request.body.status === 'declined' ? 'declined' : 'accepted'
+  const event = await calendarService.respondEventInvitation(
+    userId,
+    typeof eventId === 'string' ? eventId : '',
+    status,
+  )
+  response.json({
+    success: true,
+    data: { event },
+    message: status === 'accepted' ? 'Đã chấp nhận lời mời tham gia sự kiện.' : 'Đã từ chối lời mời tham gia sự kiện.',
+  })
+}
+
+export const leaveEvent: RequestHandler = async (request, response) => {
+  const userId = userIdFrom(response.locals)
+  const { eventId } = request.params
+  await calendarService.leaveEvent(userId, typeof eventId === 'string' ? eventId : '')
+  response.json({
+    success: true,
+    data: null,
+    message: 'Bạn đã rời khỏi sự kiện thành công.',
+  })
+}
