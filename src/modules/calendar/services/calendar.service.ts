@@ -1,7 +1,12 @@
+import { Types } from 'mongoose'
 import { AppError } from '../../../shared/errors/app-error.js'
 import { CalendarCategoryModel } from '../models/calendar-category.model.js'
 import { EventModel } from '../models/event.model.js'
 import { calendarRepository } from '../repositories/calendar.repository.js'
+import { UserModel } from '@/modules/auth/models/user.model.js'
+import { NotificationModel } from '@/modules/notifications/models/notification.model.js'
+import { notificationService } from '@/modules/notifications/services/notification.service.js'
+import { sendEventInvitationEmail } from '@/modules/auth/services/email.service.js'
 import type {
   CalendarCategoryResponse,
   CalendarEventResponse,
@@ -91,12 +96,27 @@ const mapEventResponse = (doc: RawEventDoc): CalendarEventResponse => {
   let calendarInfo: CalendarCategoryResponse | null = null
   let rawCalendarId: string | null = null
 
+  let creatorInfo: { id: string; email: string; fullName: string } | undefined
+  let rawUserId = ''
+
+  if (doc.userId && typeof doc.userId === 'object' && '_id' in doc.userId) {
+    const popUser = doc.userId as { _id: unknown; email?: string; fullName?: string }
+    rawUserId = String(popUser._id)
+    creatorInfo = {
+      id: rawUserId,
+      email: popUser.email ?? '',
+      fullName: popUser.fullName ?? '',
+    }
+  } else if (doc.userId) {
+    rawUserId = String(doc.userId)
+  }
+
   if (doc.calendarId && typeof doc.calendarId === 'object' && '_id' in doc.calendarId) {
     const pop = doc.calendarId as RawPopulatedCategory
     rawCalendarId = String(pop._id)
     calendarInfo = {
       id: String(pop._id),
-      userId: String(doc.userId),
+      userId: rawUserId,
       name: pop.name,
       color: pop.color,
       description: pop.description ?? '',
@@ -122,7 +142,9 @@ const mapEventResponse = (doc: RawEventDoc): CalendarEventResponse => {
 
   return {
     id: String(doc._id),
-    userId: String(doc.userId),
+    userId: rawUserId,
+    creator: creatorInfo,
+    creatorEmail: creatorInfo?.email ?? '',
     calendarId: rawCalendarId,
     calendar: calendarInfo,
     entryType: doc.entryType,
@@ -262,12 +284,14 @@ export const calendarService = {
   },
 
   getEvents: async (userId: string, filters: EventQueryFilters = {}): Promise<CalendarEventResponse[]> => {
-    const events = await calendarRepository.findEvents(userId, filters)
+    const user = await UserModel.findById(userId).select('email fullName').lean()
+    const events = await calendarRepository.findEvents(userId, user?.email, filters)
     return events.map((item) => mapEventResponse(item as unknown as RawEventDoc))
   },
 
   getEventById: async (userId: string, eventId: string): Promise<CalendarEventResponse> => {
-    const event = await calendarRepository.findEventById(userId, eventId)
+    const user = await UserModel.findById(userId).select('email fullName').lean()
+    const event = await calendarRepository.findEventById(userId, eventId, user?.email)
     if (!event) {
       throw new AppError(404, 'EVENT_NOT_FOUND', 'Không tìm thấy sự kiện yêu cầu')
     }
@@ -276,6 +300,30 @@ export const calendarService = {
 
   createEvent: async (userId: string, payload: unknown): Promise<CalendarEventResponse> => {
     const data = validateCreateEvent(payload)
+
+    const creator = await UserModel.findById(userId).select('email fullName').lean()
+    const creatorEmail = creator?.email?.trim().toLowerCase()
+
+    if (data.guests && data.guests.length > 0) {
+      for (const guest of data.guests) {
+        const identifier = guest.email.trim().toLowerCase()
+        if (!identifier.includes('@')) {
+          const found = await UserModel.findOne({
+            username: new RegExp(`^${identifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
+            status: { $ne: 'locked' },
+          }).select('email').lean()
+          if (found?.email) {
+            guest.email = found.email.toLowerCase()
+          } else {
+            throw new AppError(400, 'USER_NOT_FOUND', `Không tìm thấy tài khoản với tên người dùng "${identifier}".`)
+          }
+        }
+      }
+    }
+
+    if (data.guests && creatorEmail) {
+      data.guests = data.guests.filter((g) => g.email.trim().toLowerCase() !== creatorEmail)
+    }
 
     if (data.calendarId) {
       const category = await calendarRepository.findCategoryById(userId, data.calendarId)
@@ -286,30 +334,342 @@ export const calendarService = {
 
     const created = await calendarRepository.createEvent(userId, data)
     const populated = await calendarRepository.findEventById(userId, String(created._id))
-    return mapEventResponse((populated ?? created) as unknown as RawEventDoc)
+    const result = mapEventResponse((populated ?? created) as unknown as RawEventDoc)
+
+    if (data.guests && data.guests.length > 0) {
+      const creatorName = creator?.fullName || 'Người dùng EduTrack'
+
+      for (const guest of data.guests) {
+        const cleanEmail = guest.email.trim().toLowerCase()
+        if (creatorEmail && cleanEmail === creatorEmail) {
+          continue
+        }
+
+        const escaped = cleanEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        const targetUser = await UserModel.findOne({
+          email: new RegExp(`^${escaped}$`, 'i'),
+          status: { $ne: 'locked' },
+        }).lean()
+
+        if (targetUser) {
+          void notificationService.createNotification({
+            userId: String(targetUser._id),
+            type: 'event_invitation',
+            title: `Lời mời tham gia sự kiện: ${result.title}`,
+            message: `${creatorName} đã mời bạn tham gia sự kiện "${result.title}".`,
+            eventId: result.id,
+            link: '/calendar',
+            metadata: {
+              status: 'pending',
+              startDate: result.startDate,
+              location: result.location,
+            },
+          })
+        }
+
+        void sendEventInvitationEmail(cleanEmail, {
+          title: result.title,
+          creatorName,
+          startDate: new Date(result.startDate),
+          endDate: new Date(result.endDate),
+          location: result.location,
+          onlineMeetingUrl: result.onlineMeetingUrl,
+          description: result.description,
+        })
+      }
+    }
+
+    return result
   },
 
   updateEvent: async (userId: string, eventId: string, payload: unknown): Promise<CalendarEventResponse> => {
-    const data = validateUpdateEvent(payload)
+    let data = validateUpdateEvent(payload)
+    const user = await UserModel.findById(userId).select('email fullName').lean()
 
-    const existing = await calendarRepository.findEventById(userId, eventId)
+    const existing = await calendarRepository.findEventById(userId, eventId, user?.email)
     if (!existing) {
       throw new AppError(404, 'EVENT_NOT_FOUND', 'Không tìm thấy sự kiện yêu cầu')
     }
 
-    if (data.calendarId) {
-      const category = await calendarRepository.findCategoryById(userId, data.calendarId)
-      if (category && !data.color && !existing.color) {
-        data.color = category.color
+    const rawOwnerId =
+      existing.userId && typeof existing.userId === 'object' && '_id' in existing.userId
+        ? String((existing.userId as { _id: unknown })._id)
+        : String(existing.userId)
+    const isOwner = rawOwnerId === userId
+
+    const creator = await UserModel.findById(rawOwnerId).select('email fullName').lean()
+    const creatorEmail = creator?.email?.trim().toLowerCase()
+
+    if (!isOwner) {
+      const currentGuest = existing.guests?.find(
+        (g) => Boolean(user?.email && g.email.toLowerCase() === user.email.toLowerCase()),
+      )
+      if (!currentGuest) {
+        throw new AppError(403, 'FORBIDDEN', 'Bạn không có quyền thao tác trên sự kiện này')
+      }
+
+      if (!currentGuest.canModify) {
+        if (!currentGuest.canInviteOthers) {
+          throw new AppError(403, 'FORBIDDEN', 'Bạn không có quyền chỉnh sửa sự kiện này')
+        }
+        data = { guests: data.guests }
+      } else {
+        delete data.calendarId
       }
     }
 
-    const updated = await calendarRepository.updateEvent(userId, eventId, data)
+    if (data.guests && data.guests.length > 0) {
+      for (const guest of data.guests) {
+        const identifier = guest.email.trim().toLowerCase()
+        if (!identifier.includes('@')) {
+          const found = await UserModel.findOne({
+            username: new RegExp(`^${identifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
+            status: { $ne: 'locked' },
+          }).select('email').lean()
+          if (found?.email) {
+            guest.email = found.email.toLowerCase()
+          } else {
+            throw new AppError(400, 'USER_NOT_FOUND', `Không tìm thấy tài khoản với tên người dùng "${identifier}".`)
+          }
+        }
+      }
+    }
+
+    if (data.guests && creatorEmail) {
+      const hasCreatorAsGuest = data.guests.some(
+        (g) => g.email.trim().toLowerCase() === creatorEmail,
+      )
+      if (hasCreatorAsGuest) {
+        throw new AppError(400, 'CANNOT_INVITE_CREATOR', 'Không thể mời lại người tạo sự kiện.')
+      }
+    }
+
+    if (!isOwner && data.guests && existing.guests) {
+      const existingGuestMap = new Map(
+        existing.guests.map((g) => [g.email.toLowerCase(), g]),
+      )
+
+      data.guests = data.guests.map((g) => {
+        const cleanEmail = g.email.trim().toLowerCase()
+        const old = existingGuestMap.get(cleanEmail)
+        if (old) {
+          return {
+            ...old,
+            email: cleanEmail,
+            role: old.role,
+            canModify: old.canModify,
+            canInviteOthers: old.canInviteOthers,
+            canSeeGuestList: old.canSeeGuestList,
+            status: old.status,
+          }
+        }
+        return {
+          email: cleanEmail,
+          role: 'viewer',
+          canModify: false,
+          canInviteOthers: true,
+          canSeeGuestList: true,
+          status: 'pending',
+        }
+      })
+    }
+
+    if (data.calendarId && isOwner) {
+      const category = await calendarRepository.findCategoryById(userId, data.calendarId)
+      if (category && (!data.color || data.calendarId !== String(existing.calendarId || ''))) {
+        if (!data.color) {
+          data.color = category.color
+        }
+      }
+    }
+
+    const updated = await calendarRepository.updateEvent(rawOwnerId, eventId, data)
     if (!updated) {
       throw new AppError(404, 'EVENT_NOT_FOUND', 'Không tìm thấy sự kiện yêu cầu')
     }
 
-    return mapEventResponse(updated as unknown as RawEventDoc)
+    const result = mapEventResponse(updated as unknown as RawEventDoc)
+
+    if (isOwner && data.guests && existing.guests) {
+      for (const guest of data.guests) {
+        const oldGuest = existing.guests.find(
+          (og) => og.email.trim().toLowerCase() === guest.email.trim().toLowerCase(),
+        )
+        if (oldGuest && !oldGuest.canModify && guest.canModify) {
+          const targetUser = await UserModel.findOne({
+            email: new RegExp(`^${guest.email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
+            status: { $ne: 'locked' },
+          }).lean()
+
+          if (targetUser) {
+            void notificationService.createNotification({
+              userId: String(targetUser._id),
+              type: 'event_update',
+              title: `Cập nhật quyền sự kiện: ${result.title}`,
+              message: `${user?.fullName || 'Người tạo'} đã cấp quyền chỉnh sửa sự kiện "${result.title}" cho bạn.`,
+              eventId: result.id,
+              link: '/calendar',
+            })
+          }
+        }
+      }
+    }
+
+    if (!isOwner) {
+      void notificationService.createNotification({
+        userId: rawOwnerId,
+        type: 'event_update',
+        title: `Sự kiện đã được chỉnh sửa: ${result.title}`,
+        message: `${user?.fullName || user?.email || 'Khách mời'} đã cập nhật nội dung sự kiện "${result.title}".`,
+        eventId: result.id,
+        link: '/calendar',
+      })
+    }
+
+    if (data.guests && data.guests.length > 0) {
+      const oldEmails = new Set((existing.guests || []).map((g) => g.email.toLowerCase()))
+      const newGuests = data.guests.filter((g) => !oldEmails.has(g.email.toLowerCase()))
+      const inviterName = user?.fullName || 'Người dùng EduTrack'
+
+      for (const guest of newGuests) {
+        const cleanEmail = guest.email.trim().toLowerCase()
+        if (user?.email && cleanEmail === user.email.trim().toLowerCase()) continue
+        if (creatorEmail && cleanEmail === creatorEmail) continue
+
+        const escaped = cleanEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        const targetUser = await UserModel.findOne({
+          email: new RegExp(`^${escaped}$`, 'i'),
+          status: { $ne: 'locked' },
+        }).lean()
+
+        if (targetUser) {
+          void notificationService.createNotification({
+            userId: String(targetUser._id),
+            type: 'event_invitation',
+            title: `Lời mời tham gia sự kiện: ${result.title}`,
+            message: `${inviterName} đã mời bạn tham gia sự kiện "${result.title}".`,
+            eventId: result.id,
+            link: '/calendar',
+            metadata: {
+              status: 'pending',
+              startDate: result.startDate,
+              location: result.location,
+            },
+          })
+        }
+
+        void sendEventInvitationEmail(cleanEmail, {
+          title: result.title,
+          creatorName: inviterName,
+          startDate: new Date(result.startDate),
+          endDate: new Date(result.endDate),
+          location: result.location,
+          onlineMeetingUrl: result.onlineMeetingUrl,
+          description: result.description,
+        })
+      }
+    }
+
+    return result
+  },
+
+  respondEventInvitation: async (
+    userId: string,
+    eventId: string,
+    status: 'accepted' | 'declined',
+  ): Promise<CalendarEventResponse> => {
+    const user = await UserModel.findById(userId).select('email fullName').lean()
+    if (!user?.email) {
+      throw new AppError(400, 'USER_EMAIL_MISSING', 'Không tìm thấy email của tài khoản.')
+    }
+
+    const updated = await calendarRepository.respondEventInvitation(eventId, user.email, status)
+    if (!updated) {
+      throw new AppError(404, 'EVENT_NOT_FOUND', 'Không tìm thấy lời mời sự kiện.')
+    }
+
+    const guestUserObjId = Types.ObjectId.isValid(userId) ? new Types.ObjectId(userId) : userId
+    const eventObjId = Types.ObjectId.isValid(eventId) ? new Types.ObjectId(eventId) : eventId
+    await NotificationModel.updateMany(
+      {
+        $and: [
+          { $or: [{ userId: guestUserObjId }, { userId }] },
+          { $or: [{ eventId: eventObjId }, { eventId }] },
+          { type: 'event_invitation' },
+        ],
+      },
+      {
+        $set: {
+          isRead: true,
+          'metadata.status': status,
+        },
+      },
+    )
+
+    const result = mapEventResponse(updated as unknown as RawEventDoc)
+
+    const guestName = user.fullName || user.email
+    const statusLabel = status === 'accepted' ? 'chấp nhận' : 'từ chối'
+    const ownerId =
+      updated.userId && typeof updated.userId === 'object' && '_id' in updated.userId
+        ? String((updated.userId as { _id: unknown })._id)
+        : String(updated.userId)
+
+    void notificationService.createNotification({
+      userId: ownerId,
+      type: 'event_response',
+      title: `Phản hồi lời mời: ${result.title}`,
+      message: `${guestName} đã ${statusLabel} lời mời tham gia sự kiện "${result.title}".`,
+      eventId: result.id,
+      link: '/calendar',
+    })
+
+    return result
+  },
+
+  leaveEvent: async (userId: string, eventId: string): Promise<void> => {
+    const user = await UserModel.findById(userId).select('email fullName').lean()
+    if (!user?.email) {
+      throw new AppError(400, 'USER_EMAIL_MISSING', 'Không tìm thấy email của tài khoản.')
+    }
+
+    const updated = await calendarRepository.leaveEvent(eventId, user.email)
+    if (!updated) {
+      throw new AppError(404, 'EVENT_NOT_FOUND', 'Không tìm thấy sự kiện.')
+    }
+
+    const guestUserObjId = Types.ObjectId.isValid(userId) ? new Types.ObjectId(userId) : userId
+    const eventObjId = Types.ObjectId.isValid(eventId) ? new Types.ObjectId(eventId) : eventId
+    await NotificationModel.updateMany(
+      {
+        $and: [
+          { $or: [{ userId: guestUserObjId }, { userId }] },
+          { $or: [{ eventId: eventObjId }, { eventId }] },
+          { type: 'event_invitation' },
+        ],
+      },
+      {
+        $set: {
+          isRead: true,
+          'metadata.status': 'declined',
+        },
+      },
+    )
+
+    const guestName = user.fullName || user.email
+    const ownerId =
+      updated.userId && typeof updated.userId === 'object' && '_id' in updated.userId
+        ? String((updated.userId as { _id: unknown })._id)
+        : String(updated.userId)
+
+    void notificationService.createNotification({
+      userId: ownerId,
+      type: 'event_update',
+      title: `Rời khỏi sự kiện: ${updated.title}`,
+      message: `${guestName} đã rời khỏi sự kiện "${updated.title}".`,
+      eventId: String(updated._id),
+      link: '/calendar',
+    })
   },
 
   deleteEvent: async (
@@ -323,12 +683,10 @@ export const calendarService = {
       throw new AppError(404, 'EVENT_NOT_FOUND', 'Không tìm thấy sự kiện yêu cầu')
     }
 
-    // Nếu sự kiện có lặp lại và có chỉ định chế độ xóa
     if (existing.recurrence && existing.recurrence.frequency !== 'none' && mode && mode !== 'all' && targetDateStr) {
       const targetDate = new Date(targetDateStr)
 
       if (mode === 'this') {
-        // Chỉ xóa lần lặp này -> Thêm ngày vào danh sách loại trừ exceptionDates
         await EventModel.updateOne(
           { _id: eventId, userId },
           { $addToSet: { exceptionDates: targetDate } },
@@ -337,10 +695,8 @@ export const calendarService = {
       }
 
       if (mode === 'following') {
-        // Xóa lần lặp này và các lần tiếp theo -> Cắt recurrence.until trước thời điểm này
         const baseStart = new Date(existing.startDate)
         if (targetDate.getTime() <= baseStart.getTime()) {
-          // Nếu mốc xóa từ sự kiện gốc trở đi -> Xóa toàn bộ
           await calendarRepository.deleteEvent(userId, eventId)
           return
         }
@@ -353,7 +709,6 @@ export const calendarService = {
       }
     }
 
-    // Mặc định hoặc mode === 'all': xóa toàn bộ sự kiện
     await calendarRepository.deleteEvent(userId, eventId)
   },
 
@@ -381,7 +736,7 @@ export const calendarService = {
       throw new AppError(404, 'CATEGORY_NOT_FOUND', 'Không tìm thấy lịch yêu cầu')
     }
 
-    const events = await calendarRepository.findEvents(userId, { calendarId: categoryId })
+    const events = await calendarRepository.findEvents(userId, undefined, { calendarId: categoryId })
     const mappedEvents = events.map((item) => mapEventResponse(item as unknown as RawEventDoc))
 
     const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`)

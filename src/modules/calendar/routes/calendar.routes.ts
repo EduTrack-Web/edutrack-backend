@@ -17,6 +17,8 @@ import {
   toggleTaskComplete,
   updateCategory,
   updateEvent,
+  respondEventInvitation,
+  leaveEvent,
 } from '@/modules/calendar/controllers/calendar.controller.js'
 export const calendarRouter = Router()
 
@@ -38,3 +40,5 @@ calendarRouter.get('/events/:eventId', getEventById)
 calendarRouter.put('/events/:eventId', requireCsrf, updateEvent)
 calendarRouter.delete('/events/:eventId', requireCsrf, deleteEvent)
 calendarRouter.patch('/events/:eventId/toggle-complete', requireCsrf, toggleTaskComplete)
+calendarRouter.post('/events/:eventId/respond-invite', requireCsrf, respondEventInvitation)
+calendarRouter.post('/events/:eventId/leave', requireCsrf, leaveEvent)
