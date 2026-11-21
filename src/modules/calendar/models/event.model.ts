@@ -153,6 +153,18 @@ const eventSchema = new Schema(
       type: [Date],
       default: [],
     },
+    remindersSent: {
+      type: [
+        new Schema(
+          {
+            reminderKey: { type: String, required: true },
+            sentAt: { type: Date, default: Date.now },
+          },
+          { _id: false },
+        ),
+      ],
+      default: [],
+    },
   },
   { timestamps: true, versionKey: false },
 )
@@ -160,6 +172,7 @@ const eventSchema = new Schema(
 eventSchema.index({ userId: 1, startDate: 1, endDate: 1 })
 eventSchema.index({ userId: 1, entryType: 1, isCompleted: 1 })
 eventSchema.index({ userId: 1, calendarId: 1 })
+eventSchema.index({ 'guests.email': 1 })
 
 export type EventDocument = InferSchemaType<typeof eventSchema>
 export const EventModel = model('Event', eventSchema)

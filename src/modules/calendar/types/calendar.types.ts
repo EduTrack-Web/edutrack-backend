@@ -84,6 +84,8 @@ export interface UpdateCategoryInput {
 export interface CalendarEventResponse {
   id: string
   userId: string
+  creator?: { id: string; email: string; fullName: string }
+  creatorEmail?: string
   calendarId?: string | null
   calendar?: CalendarCategoryResponse | null
   entryType: EntryType

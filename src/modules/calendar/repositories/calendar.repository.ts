@@ -117,22 +117,53 @@ export const calendarRepository = {
     return CalendarCategoryModel.findOneAndDelete({ _id: categoryId, userId }).lean()
   },
 
-  findEvents: (userId: string, filters: EventQueryFilters = {}) => {
-    const query: Record<string, unknown> = { userId }
+  findEvents: (userId: string, userEmail?: string, filters: EventQueryFilters = {}) => {
+    const andConditions: Record<string, unknown>[] = []
+
+    const accessCriteria: Record<string, unknown>[] = [{ userId }]
+    if (userEmail) {
+      const cleanEmail = userEmail.trim().toLowerCase()
+      const emailRegex = new RegExp(`^${cleanEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')
+      accessCriteria.push({
+        guests: {
+          $elemMatch: {
+            email: emailRegex,
+            status: 'accepted',
+          },
+        },
+      })
+    }
+    andConditions.push({ $or: accessCriteria })
 
     if (filters.entryType) {
-      query.entryType = filters.entryType
+      andConditions.push({ entryType: filters.entryType })
     }
 
     if (filters.calendarId && isValidObjectId(filters.calendarId)) {
-      query.calendarId = filters.calendarId
+      andConditions.push({ calendarId: filters.calendarId })
     } else if (filters.calendarIds && filters.calendarIds.length > 0) {
       const validIds = filters.calendarIds.filter(isValidObjectId)
-      query.$or = [{ calendarId: { $in: validIds } }, { calendarId: null }]
+      const allowedCategories: Record<string, unknown>[] = [
+        { calendarId: { $in: validIds } },
+        { calendarId: null },
+      ]
+      if (userEmail) {
+        const cleanEmail = userEmail.trim().toLowerCase()
+        const emailRegex = new RegExp(`^${cleanEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')
+        allowedCategories.push({
+          guests: {
+            $elemMatch: {
+              email: emailRegex,
+              status: 'accepted',
+            },
+          },
+        })
+      }
+      andConditions.push({ $or: allowedCategories })
     }
 
     if (typeof filters.isCompleted === 'boolean') {
-      query.isCompleted = filters.isCompleted
+      andConditions.push({ isCompleted: filters.isCompleted })
     }
 
     if (filters.from || filters.to) {
@@ -150,29 +181,96 @@ export const calendarRepository = {
         }
       }
       if (Object.keys(dateRangeQuery).length > 0) {
-        query.startDate = dateRangeQuery
+        andConditions.push({ startDate: dateRangeQuery })
       }
     }
 
     if (filters.q && filters.q.trim()) {
       const escaped = filters.q.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      query.$or = [
-        { title: new RegExp(escaped, 'i') },
-        { location: new RegExp(escaped, 'i') },
-        { description: new RegExp(escaped, 'i') },
-      ]
+      andConditions.push({
+        $or: [
+          { title: new RegExp(escaped, 'i') },
+          { location: new RegExp(escaped, 'i') },
+          { description: new RegExp(escaped, 'i') },
+        ],
+      })
     }
+
+    const query = andConditions.length === 1 ? andConditions[0] : { $and: andConditions }
 
     return EventModel.find(query)
       .populate('calendarId', 'name color description isVisible')
+      .populate('userId', 'email fullName avatarUrl')
       .sort({ startDate: 1 })
       .lean()
   },
 
-  findEventById: (userId: string, eventId: string) => {
+  findEventById: (userId: string, eventId: string, userEmail?: string) => {
     if (!isValidObjectId(eventId)) return null
-    return EventModel.findOne({ _id: eventId, userId })
+    const accessCriteria: Record<string, unknown>[] = [{ userId }]
+    if (userEmail) {
+      const cleanEmail = userEmail.trim().toLowerCase()
+      const emailRegex = new RegExp(`^${cleanEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')
+      accessCriteria.push({
+        guests: {
+          $elemMatch: {
+            email: emailRegex,
+          },
+        },
+      })
+    }
+    return EventModel.findOne({ _id: eventId, $or: accessCriteria })
       .populate('calendarId', 'name color description isVisible')
+      .populate('userId', 'email fullName avatarUrl')
+      .lean()
+  },
+
+  respondEventInvitation: async (eventId: string, userEmail: string, status: 'accepted' | 'declined') => {
+    if (!isValidObjectId(eventId)) return null
+    const cleanEmail = userEmail.trim().toLowerCase()
+
+    const eventDoc = await EventModel.findById(eventId)
+    if (!eventDoc) return null
+
+    const guestIndex = (eventDoc.guests || []).findIndex(
+      (g) => Boolean(g.email && g.email.trim().toLowerCase() === cleanEmail),
+    )
+
+    const targetGuest = eventDoc.guests[guestIndex]
+    if (targetGuest) {
+      targetGuest.status = status
+    } else {
+      eventDoc.guests.push({
+        email: cleanEmail,
+        role: 'viewer',
+        canModify: false,
+        canInviteOthers: true,
+        canSeeGuestList: true,
+        status,
+      })
+    }
+
+    eventDoc.markModified('guests')
+    await eventDoc.save()
+
+    return EventModel.findById(eventId)
+      .populate('calendarId', 'name color description isVisible')
+      .populate('userId', 'email fullName avatarUrl')
+      .lean()
+  },
+
+  leaveEvent: async (eventId: string, userEmail: string) => {
+    if (!isValidObjectId(eventId)) return null
+    const cleanEmail = userEmail.trim().toLowerCase()
+
+    await EventModel.updateOne(
+      { _id: eventId },
+      { $pull: { guests: { email: cleanEmail } } },
+    )
+
+    return EventModel.findById(eventId)
+      .populate('calendarId', 'name color description isVisible')
+      .populate('userId', 'email fullName avatarUrl')
       .lean()
   },
 
@@ -193,6 +291,8 @@ export const calendarRepository = {
       color: data.color ?? '',
       availability: data.availability ?? 'busy',
       visibility: data.visibility ?? 'default',
+      timeZone: data.timeZone ?? '',
+      guests: data.guests ?? [],
       isCompleted: false,
       completedAt: null,
       checklist: data.checklist ?? [],
@@ -221,6 +321,8 @@ export const calendarRepository = {
     if ('color' in data) updateFields.color = data.color
     if ('availability' in data) updateFields.availability = data.availability
     if ('visibility' in data) updateFields.visibility = data.visibility
+    if ('timeZone' in data) updateFields.timeZone = data.timeZone
+    if ('guests' in data) updateFields.guests = data.guests
     if ('isCompleted' in data) {
       updateFields.isCompleted = data.isCompleted
       updateFields.completedAt = data.isCompleted ? new Date() : null
@@ -235,6 +337,7 @@ export const calendarRepository = {
       { new: true, runValidators: true },
     )
       .populate('calendarId', 'name color description isVisible')
+      .populate('userId', 'email fullName avatarUrl')
       .lean()
   },
 
