@@ -1,4 +1,5 @@
 import type { RequestHandler } from 'express'
+import { AppError } from '@/shared/errors/app-error.js'
 import type { AuthenticatedRequestLocals } from '@/shared/middleware/authenticate.js'
 import { notificationService } from '../services/notification.service.js'
 
@@ -36,6 +37,24 @@ export const markAllAsRead: RequestHandler = async (_request, response) => {
     data: null,
     message: 'Đã đánh dấu tất cả thông báo là đã đọc.',
   })
+}
+
+const requireReadState = (body: unknown): void => {
+  if (typeof body !== 'object' || body === null || !('isRead' in body) || body.isRead !== true) {
+    throw new AppError(422, 'VALIDATION_ERROR', 'Trạng thái thông báo không hợp lệ.', {
+      isRead: 'isRead phải có giá trị true.',
+    })
+  }
+}
+
+export const updateNotification: RequestHandler = async (request, response) => {
+  requireReadState(request.body)
+  await markAsRead(request, response, () => undefined)
+}
+
+export const updateNotifications: RequestHandler = async (request, response) => {
+  requireReadState(request.body)
+  await markAllAsRead(request, response, () => undefined)
 }
 
 export const deleteNotification: RequestHandler = async (request, response) => {
