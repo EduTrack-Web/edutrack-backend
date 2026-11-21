@@ -36,6 +36,7 @@ import {
 import { searchChatMessages } from '@/modules/chat/controllers/chat-search.controller.js'
 
 export const chatRouter = Router()
+export const chatRestRouter = Router()
 const chatSearchLimiter = rateLimit({
   windowMs: 60 * 1_000,
   limit: 60,
@@ -75,4 +76,30 @@ chatRouter.delete('/friend-requests/:requestId', requireCsrf, revokeFriendReques
 chatRouter.get('/blocked-users', getBlockedUsers)
 chatRouter.post('/blocked-users', requireCsrf, blockUser)
 chatRouter.delete('/blocked-users/:userId', requireCsrf, unblockUser)
+
+chatRestRouter.use(authenticate)
+chatRestRouter.get('/messages', chatSearchLimiter, searchChatMessages)
+chatRestRouter.get('/groups', getChatGroups)
+chatRestRouter.post('/groups', requireCsrf, createChatGroup)
+chatRestRouter.get('/groups/:groupId', getChatGroup)
+chatRestRouter.get('/groups/:groupId/messages', getChatGroupMessages)
+chatRestRouter.post('/groups/:groupId/messages', requireCsrf, createChatGroupMessage)
+chatRestRouter.post('/groups/:groupId/invite-links', requireCsrf, createChatGroupInviteLink)
+chatRestRouter.get('/group-invitations/:token', previewChatGroupInvite)
+chatRestRouter.post('/group-invitations/:token/membership', requireCsrf, joinChatGroupByInvite)
+chatRestRouter.get('/direct-conversations', getDirectConversations)
+chatRestRouter.get('/direct-conversations/:conversationId', getDirectConversation)
+chatRestRouter.get('/direct-conversations/:conversationId/messages', getDirectConversationMessages)
+chatRestRouter.post('/direct-conversations/:conversationId/messages', requireCsrf, createDirectConversationMessage)
+chatRestRouter.get('/channels', getChannels)
+chatRestRouter.get('/friendships', getFriends)
+chatRestRouter.get('/friend-candidates', searchFriendUsers)
+chatRestRouter.get('/friend-requests', getFriendRequests)
+chatRestRouter.post('/friend-requests', requireCsrf, sendFriendRequest)
+chatRestRouter.post('/friend-requests/:requestId/acceptance', requireCsrf, acceptFriendRequest)
+chatRestRouter.delete('/received-friend-requests/:requestId', requireCsrf, declineFriendRequest)
+chatRestRouter.delete('/sent-friend-requests/:requestId', requireCsrf, revokeFriendRequest)
+chatRestRouter.get('/blocked-users', getBlockedUsers)
+chatRestRouter.post('/blocked-users', requireCsrf, blockUser)
+chatRestRouter.delete('/blocked-users/:userId', requireCsrf, unblockUser)
 

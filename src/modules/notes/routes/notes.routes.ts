@@ -30,6 +30,10 @@ import {
 } from '@/modules/notes/controllers/note-shares.controller.js'
 
 export const notesRouter = Router()
+export const notesRestRouter = Router()
+export const noteTagsRestRouter = Router()
+export const noteImagesRestRouter = Router()
+export const trashedNotesRestRouter = Router()
 
 notesRouter.use(authenticate)
 notesRouter.get('/', getNotes)
@@ -53,4 +57,33 @@ notesRouter.patch('/:noteId', requireCsrf, updateNote)
 notesRouter.delete('/:noteId', requireCsrf, moveNoteToTrash)
 notesRouter.post('/:noteId/restore', requireCsrf, restoreNote)
 notesRouter.delete('/:noteId/permanent', requireCsrf, deleteNotePermanently)
+
+notesRestRouter.use(authenticate)
+notesRestRouter.get('/', getNotes)
+notesRestRouter.post('/', requireCsrf, createNote)
+notesRestRouter.post('/:noteId/copies', requireCsrf, duplicateNote)
+notesRestRouter.get('/:noteId', getNote)
+notesRestRouter.patch('/:noteId', requireCsrf, updateNote)
+notesRestRouter.delete('/:noteId', requireCsrf, moveNoteToTrash)
+notesRestRouter.get('/:noteId/tags', getNoteTags)
+notesRestRouter.put('/:noteId/tags', requireCsrf, setNoteTags)
+notesRestRouter.delete('/:noteId/tags/:tagId', requireCsrf, removeNoteTag)
+notesRestRouter.get('/:noteId/collaborators', getNoteCollaborators)
+notesRestRouter.get('/:noteId/collaborator-candidates', searchShareUsers)
+notesRestRouter.put('/:noteId/collaborators', requireCsrf, setNoteCollaborator)
+notesRestRouter.delete('/:noteId/collaborators/:userId', requireCsrf, removeNoteCollaborator)
+
+noteTagsRestRouter.use(authenticate)
+noteTagsRestRouter.get('/', getUserTags)
+noteTagsRestRouter.post('/', requireCsrf, createTag)
+noteTagsRestRouter.patch('/:tagId', requireCsrf, updateTag)
+noteTagsRestRouter.delete('/:tagId', requireCsrf, deleteTag)
+
+noteImagesRestRouter.use(authenticate)
+noteImagesRestRouter.post('/', requireCsrf, uploadNoteImage, uploadImage)
+
+trashedNotesRestRouter.use(authenticate)
+trashedNotesRestRouter.get('/', getTrashedNotes)
+trashedNotesRestRouter.put('/:noteId', requireCsrf, restoreNote)
+trashedNotesRestRouter.delete('/:noteId', requireCsrf, deleteNotePermanently)
 

@@ -21,6 +21,7 @@ import {
   leaveEvent,
 } from '@/modules/calendar/controllers/calendar.controller.js'
 export const calendarRouter = Router()
+export const calendarRestRouter = Router()
 
 calendarRouter.use(authenticate)
 
@@ -42,3 +43,23 @@ calendarRouter.delete('/events/:eventId', requireCsrf, deleteEvent)
 calendarRouter.patch('/events/:eventId/toggle-complete', requireCsrf, toggleTaskComplete)
 calendarRouter.post('/events/:eventId/respond-invite', requireCsrf, respondEventInvitation)
 calendarRouter.post('/events/:eventId/leave', requireCsrf, leaveEvent)
+
+calendarRestRouter.use(authenticate)
+calendarRestRouter.get('/categories', getCategories)
+calendarRestRouter.post('/categories', requireCsrf, createCategory)
+calendarRestRouter.put('/category-visibility', requireCsrf, setAllCategoriesVisibility)
+calendarRestRouter.put('/categories/:categoryId/visibility-selection', requireCsrf, setOnlyCategoryVisible)
+calendarRestRouter.put('/categories/:categoryId', requireCsrf, updateCategory)
+calendarRestRouter.patch('/categories/:categoryId/visibility', requireCsrf, toggleCategoryVisibility)
+calendarRestRouter.delete('/categories/:categoryId', requireCsrf, deleteCategory)
+calendarRestRouter.get('/categories/:categoryId/export-file', exportCategory)
+calendarRestRouter.post('/categories/:categoryId/imports', requireCsrf, importCategory)
+
+calendarRestRouter.get('/events', getEvents)
+calendarRestRouter.post('/events', requireCsrf, createEvent)
+calendarRestRouter.get('/events/:eventId', getEventById)
+calendarRestRouter.put('/events/:eventId', requireCsrf, updateEvent)
+calendarRestRouter.delete('/events/:eventId', requireCsrf, deleteEvent)
+calendarRestRouter.patch('/events/:eventId/completion', requireCsrf, toggleTaskComplete)
+calendarRestRouter.patch('/events/:eventId/invitations/me', requireCsrf, respondEventInvitation)
+calendarRestRouter.delete('/events/:eventId/attendees/me', requireCsrf, leaveEvent)

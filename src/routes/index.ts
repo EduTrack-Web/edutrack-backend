@@ -1,19 +1,37 @@
 import { Router } from 'express'
 
-import { accountRouter } from '@/modules/account/routes/account.routes.js'
-import { authRouter } from '@/modules/auth/routes/auth.routes.js'
-import { calendarRouter } from '@/modules/calendar/routes/calendar.routes.js'
-import { chatRouter } from '@/modules/chat/routes/chat.routes.js'
+import { accountRouter, usersRestRouter } from '@/modules/account/routes/account.routes.js'
+import { authRestRouter, authRouter } from '@/modules/auth/routes/auth.routes.js'
+import { calendarRestRouter, calendarRouter } from '@/modules/calendar/routes/calendar.routes.js'
+import { chatRestRouter, chatRouter } from '@/modules/chat/routes/chat.routes.js'
 import { healthRouter } from '@/modules/health/routes/health.routes.js'
-import { notesRouter } from '@/modules/notes/routes/notes.routes.js'
-import { notificationRouter } from '@/modules/notifications/routes/notification.routes.js'
+import {
+  noteImagesRestRouter,
+  notesRestRouter,
+  notesRouter,
+  noteTagsRestRouter,
+  trashedNotesRestRouter,
+} from '@/modules/notes/routes/notes.routes.js'
+import { notificationRestRouter, notificationRouter } from '@/modules/notifications/routes/notification.routes.js'
 
 export const apiRouter = Router()
+export const legacyApiRouter = Router()
 
 apiRouter.use('/health', healthRouter)
-apiRouter.use('/auth', authRouter)
-apiRouter.use('/account', accountRouter)
-apiRouter.use('/calendar', calendarRouter)
-apiRouter.use('/notes', notesRouter)
-apiRouter.use('/chat', chatRouter)
-apiRouter.use('/notifications', notificationRouter)
+apiRouter.use('/auth', authRestRouter)
+apiRouter.use('/users', usersRestRouter)
+apiRouter.use('/notes', notesRestRouter)
+apiRouter.use('/note-tags', noteTagsRestRouter)
+apiRouter.use('/note-images', noteImagesRestRouter)
+apiRouter.use('/trash/notes', trashedNotesRestRouter)
+apiRouter.use('/chat', chatRestRouter)
+apiRouter.use('/calendar', calendarRestRouter)
+apiRouter.use('/notifications', notificationRestRouter)
+
+legacyApiRouter.use('/health', healthRouter)
+legacyApiRouter.use('/auth', authRouter)
+legacyApiRouter.use('/account', accountRouter)
+legacyApiRouter.use('/calendar', calendarRouter)
+legacyApiRouter.use('/notes', notesRouter)
+legacyApiRouter.use('/chat', chatRouter)
+legacyApiRouter.use('/notifications', notificationRouter)

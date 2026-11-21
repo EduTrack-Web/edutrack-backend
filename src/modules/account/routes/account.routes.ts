@@ -37,6 +37,7 @@ const upload = multer({
 })
 
 export const accountRouter = Router()
+export const usersRestRouter = Router()
 
 // Tất cả endpoints của account đều yêu cầu đăng nhập
 accountRouter.use(authenticate)
@@ -65,3 +66,19 @@ accountRouter.post('/google/unlink', requireCsrf, unlinkGoogle)
 // Xóa tài khoản vĩnh viễn (Danger Zone)
 accountRouter.post('/delete/send-otp', requireCsrf, sendDeleteAccountOtp)
 accountRouter.delete('/', requireCsrf, deleteAccount)
+
+usersRestRouter.use(authenticate)
+usersRestRouter.get('/me', getProfile)
+usersRestRouter.patch('/me', requireCsrf, updateProfile)
+usersRestRouter.delete('/me', requireCsrf, deleteAccount)
+usersRestRouter.put('/me/avatar', requireCsrf, upload.single('avatar'), uploadAvatar)
+usersRestRouter.get('/username-availability', checkUsername)
+usersRestRouter.patch('/me/profile-completion', requireCsrf, setupProfile)
+usersRestRouter.put('/me/password', requireCsrf, changePassword)
+usersRestRouter.get('/me/sessions', getSessions)
+usersRestRouter.delete('/me/sessions', requireCsrf, revokeOtherSessions)
+usersRestRouter.post('/me/two-factor-challenges', requireCsrf, send2faOtp)
+usersRestRouter.put('/me/two-factor-authentication', requireCsrf, enable2fa)
+usersRestRouter.delete('/me/two-factor-authentication', requireCsrf, disable2fa)
+usersRestRouter.delete('/me/google-link', requireCsrf, unlinkGoogle)
+usersRestRouter.post('/me/deletion-verifications', requireCsrf, sendDeleteAccountOtp)
