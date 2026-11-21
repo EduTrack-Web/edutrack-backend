@@ -45,12 +45,12 @@ const cookieBase = () => ({
 
 const setAuthCookies = (response: Response, tokens: { accessToken: string; refreshToken: string }): void => {
   response.cookie(ACCESS_COOKIE, tokens.accessToken, { ...cookieBase(), maxAge: accessMaxAge, path: '/' })
-  response.cookie(REFRESH_COOKIE, tokens.refreshToken, { ...cookieBase(), maxAge: refreshMaxAge, path: '/v1/api/auth' })
+  response.cookie(REFRESH_COOKIE, tokens.refreshToken, { ...cookieBase(), maxAge: refreshMaxAge, path: '/' })
 }
 
 export const clearAuthCookies = (response: Response): void => {
   response.clearCookie(ACCESS_COOKIE, { ...cookieBase(), path: '/' })
-  response.clearCookie(REFRESH_COOKIE, { ...cookieBase(), path: '/v1/api/auth' })
+  response.clearCookie(REFRESH_COOKIE, { ...cookieBase(), path: '/' })
   response.clearCookie(CSRF_COOKIE, {
     httpOnly: false,
     secure: env.nodeEnv === 'production',
@@ -208,8 +208,8 @@ export const startGoogleLogin: RequestHandler = (request, response) => {
   response.set('Cache-Control', 'no-store')
   response.clearCookie(GOOGLE_STATE_COOKIE, { ...cookieBase(), path: '/' })
   response.clearCookie(GOOGLE_VERIFIER_COOKIE, { ...cookieBase(), path: '/' })
-  response.cookie(GOOGLE_STATE_COOKIE, nonce, { ...cookieBase(), maxAge: 10 * 60 * 1000, path: '/v1/api/auth/google' })
-  response.cookie(GOOGLE_VERIFIER_COOKIE, codeVerifier, { ...cookieBase(), maxAge: 10 * 60 * 1000, path: '/v1/api/auth/google' })
+  response.cookie(GOOGLE_STATE_COOKIE, nonce, { ...cookieBase(), maxAge: 10 * 60 * 1000, path: '/' })
+  response.cookie(GOOGLE_VERIFIER_COOKIE, codeVerifier, { ...cookieBase(), maxAge: 10 * 60 * 1000, path: '/' })
 
   const parameters = new URLSearchParams({
     client_id: google.clientId,
@@ -238,8 +238,6 @@ const processGoogleCallback = async (request: Request, response: Response): Prom
     && parsedState.nonce.length === storedNonce.length
     && timingSafeEqual(Buffer.from(parsedState.nonce), Buffer.from(storedNonce))
 
-  response.clearCookie(GOOGLE_STATE_COOKIE, { ...cookieBase(), path: '/v1/api/auth/google' })
-  response.clearCookie(GOOGLE_VERIFIER_COOKIE, { ...cookieBase(), path: '/v1/api/auth/google' })
   response.clearCookie(GOOGLE_STATE_COOKIE, { ...cookieBase(), path: '/' })
   response.clearCookie(GOOGLE_VERIFIER_COOKIE, { ...cookieBase(), path: '/' })
 

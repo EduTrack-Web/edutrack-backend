@@ -11,7 +11,7 @@ import { directConversationsService } from '@/modules/chat/services/direct-conve
 import type { ChatMessageItem, ChatPresenceItem, DirectChatMessageItem } from '@/modules/chat/types/chat.types.js'
 
 export const CHAT_SOCKET_SERVER_KEY = 'chatSocketServer'
-export const CHAT_SOCKET_PATH = '/v1/api/socket.io'
+export const CHAT_SOCKET_PATH = '/api/v1/socket.io'
 
 interface JoinGroupPayload {
   groupId: string
