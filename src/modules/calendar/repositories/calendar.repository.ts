@@ -83,7 +83,7 @@ export const calendarRepository = {
     return CalendarCategoryModel.findOneAndUpdate(
       { _id: categoryId, userId },
       { $set: data },
-      { new: true, runValidators: true },
+      { returnDocument: 'after', runValidators: true },
     ).lean()
   },
 
@@ -92,7 +92,7 @@ export const calendarRepository = {
     return CalendarCategoryModel.findOneAndUpdate(
       { _id: categoryId, userId },
       { $set: { isVisible } },
-      { new: true },
+      { returnDocument: 'after' },
     ).lean()
   },
 
@@ -102,7 +102,7 @@ export const calendarRepository = {
     return CalendarCategoryModel.findOneAndUpdate(
       { _id: categoryId, userId },
       { $set: { isVisible: true } },
-      { new: true },
+      { returnDocument: 'after' },
     ).lean()
   },
 
@@ -334,7 +334,7 @@ export const calendarRepository = {
     return EventModel.findOneAndUpdate(
       { _id: eventId, userId },
       { $set: updateFields },
-      { new: true, runValidators: true },
+      { returnDocument: 'after', runValidators: true },
     )
       .populate('calendarId', 'name color description isVisible')
       .populate('userId', 'email fullName avatarUrl')
@@ -356,7 +356,7 @@ export const calendarRepository = {
           completedAt: isCompleted ? new Date() : null,
         },
       },
-      { new: true },
+      { returnDocument: 'after' },
     )
       .populate('calendarId', 'name color description isVisible')
       .lean()

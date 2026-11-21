@@ -15,6 +15,7 @@ const ACCESS_COOKIE = 'edutrack_access'
 const REFRESH_COOKIE = 'edutrack_refresh'
 const GOOGLE_STATE_COOKIE = 'edutrack_google_state'
 const GOOGLE_VERIFIER_COOKIE = 'edutrack_google_verifier'
+const GOOGLE_REQUEST_TIMEOUT_MS = 10_000
 
 interface OAuthStatePayload {
   nonce: string
@@ -162,6 +163,19 @@ const requireGoogleConfig = () => {
   }
 }
 
+const readJsonResponse = async (response: globalThis.Response): Promise<unknown> => {
+  try {
+    return await response.json()
+  } catch {
+    return null
+  }
+}
+
+const googleProviderErrorFrom = (value: unknown): string | undefined => {
+  if (typeof value !== 'object' || value === null || !('error' in value)) return undefined
+  return typeof value.error === 'string' ? value.error : undefined
+}
+
 export const startGoogleLogin: RequestHandler = (request, response) => {
   let google: ReturnType<typeof requireGoogleConfig>
   try {
@@ -191,6 +205,9 @@ export const startGoogleLogin: RequestHandler = (request, response) => {
 
   const state = encodeOAuthState({ nonce, action: actionValue })
 
+  response.set('Cache-Control', 'no-store')
+  response.clearCookie(GOOGLE_STATE_COOKIE, { ...cookieBase(), path: '/' })
+  response.clearCookie(GOOGLE_VERIFIER_COOKIE, { ...cookieBase(), path: '/' })
   response.cookie(GOOGLE_STATE_COOKIE, nonce, { ...cookieBase(), maxAge: 10 * 60 * 1000, path: '/v1/api/auth/google' })
   response.cookie(GOOGLE_VERIFIER_COOKIE, codeVerifier, { ...cookieBase(), maxAge: 10 * 60 * 1000, path: '/v1/api/auth/google' })
 
@@ -223,6 +240,8 @@ const processGoogleCallback = async (request: Request, response: Response): Prom
 
   response.clearCookie(GOOGLE_STATE_COOKIE, { ...cookieBase(), path: '/v1/api/auth/google' })
   response.clearCookie(GOOGLE_VERIFIER_COOKIE, { ...cookieBase(), path: '/v1/api/auth/google' })
+  response.clearCookie(GOOGLE_STATE_COOKIE, { ...cookieBase(), path: '/' })
+  response.clearCookie(GOOGLE_VERIFIER_COOKIE, { ...cookieBase(), path: '/' })
 
   if (!validNonce || typeof codeVerifier !== 'string' || !parsedState) {
     throw new AppError(400, 'GOOGLE_STATE_INVALID', 'Phiên đăng nhập Google không hợp lệ hoặc đã hết hạn.')
@@ -232,27 +251,48 @@ const processGoogleCallback = async (request: Request, response: Response): Prom
   const code = typeof request.query.code === 'string' ? request.query.code : undefined
   if (!code) throw new AppError(400, 'GOOGLE_CODE_MISSING', 'Google không trả về mã xác thực.')
 
-  const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      code,
-      client_id: google.clientId,
-      client_secret: google.clientSecret,
-      redirect_uri: google.callbackUrl,
-      grant_type: 'authorization_code',
-      code_verifier: codeVerifier,
-    }),
-  })
-  if (!tokenResponse.ok) throw new AppError(401, 'GOOGLE_AUTH_FAILED', 'Không thể xác thực với Google.')
-  const tokenBody: unknown = await tokenResponse.json()
+  let tokenResponse: globalThis.Response
+  try {
+    tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code,
+        client_id: google.clientId,
+        client_secret: google.clientSecret,
+        redirect_uri: google.callbackUrl,
+        grant_type: 'authorization_code',
+        code_verifier: codeVerifier,
+      }),
+      signal: AbortSignal.timeout(GOOGLE_REQUEST_TIMEOUT_MS),
+    })
+  } catch {
+    throw new AppError(502, 'GOOGLE_PROVIDER_UNAVAILABLE', 'Không thể kết nối với Google lúc này.')
+  }
+  const tokenBody = await readJsonResponse(tokenResponse)
+  if (!tokenResponse.ok) {
+    const providerError = googleProviderErrorFrom(tokenBody)
+    if (providerError === 'invalid_grant') {
+      throw new AppError(401, 'GOOGLE_AUTH_SESSION_EXPIRED', 'Phiên xác thực Google đã hết hạn hoặc đã được sử dụng. Vui lòng thử lại.')
+    }
+    if (providerError === 'invalid_client') {
+      throw new AppError(503, 'GOOGLE_OAUTH_NOT_CONFIGURED', 'Cấu hình đăng nhập Google không hợp lệ.')
+    }
+    throw new AppError(401, 'GOOGLE_AUTH_FAILED', 'Không thể xác thực với Google.')
+  }
   if (typeof tokenBody !== 'object' || tokenBody === null || !('access_token' in tokenBody) || typeof tokenBody.access_token !== 'string') {
     throw new AppError(401, 'GOOGLE_AUTH_FAILED', 'Phản hồi Google không hợp lệ.')
   }
-  const profileResponse = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
-    headers: { Authorization: `Bearer ${tokenBody.access_token}` },
-  })
-  const profile: unknown = await profileResponse.json()
+  let profileResponse: globalThis.Response
+  try {
+    profileResponse = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
+      headers: { Authorization: `Bearer ${tokenBody.access_token}` },
+      signal: AbortSignal.timeout(GOOGLE_REQUEST_TIMEOUT_MS),
+    })
+  } catch {
+    throw new AppError(502, 'GOOGLE_PROVIDER_UNAVAILABLE', 'Không thể kết nối với Google lúc này.')
+  }
+  const profile = await readJsonResponse(profileResponse)
   if (!profileResponse.ok || typeof profile !== 'object' || profile === null) throw new AppError(401, 'GOOGLE_PROFILE_FAILED', 'Không thể đọc hồ sơ Google.')
   const data = profile as Record<string, unknown>
   if (typeof data.sub !== 'string' || typeof data.email !== 'string' || data.email_verified !== true || typeof data.name !== 'string') {
