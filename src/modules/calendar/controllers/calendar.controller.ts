@@ -177,7 +177,15 @@ export const createEvent: RequestHandler = async (request, response) => {
 export const updateEvent: RequestHandler = async (request, response) => {
   const userId = userIdFrom(response.locals)
   const { eventId } = request.params
-  const event = await calendarService.updateEvent(userId, typeof eventId === 'string' ? eventId : '', request.body)
+  const queryMode = typeof request.query.mode === 'string' ? request.query.mode : undefined
+  const queryTargetDate = typeof request.query.targetDate === 'string' ? request.query.targetDate : undefined
+  const body = (request.body && typeof request.body === 'object' ? request.body : {}) as Record<string, unknown>
+  const payload = {
+    ...body,
+    ...(queryMode ? { mode: queryMode } : {}),
+    ...(queryTargetDate ? { targetDate: queryTargetDate } : {}),
+  }
+  const event = await calendarService.updateEvent(userId, typeof eventId === 'string' ? eventId : '', payload)
   response.json({
     success: true,
     data: { event },

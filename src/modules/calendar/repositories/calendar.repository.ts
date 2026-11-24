@@ -282,6 +282,7 @@ export const calendarRepository = {
       priority: data.priority ?? 'medium',
       startDate: new Date(data.startDate),
       endDate: new Date(data.endDate),
+      deadline: data.deadline ? new Date(data.deadline) : null,
       isAllDay: Boolean(data.isAllDay),
       calendarId: data.calendarId ? new Types.ObjectId(data.calendarId) : null,
       description: data.description ?? '',
@@ -310,6 +311,7 @@ export const calendarRepository = {
     if ('priority' in data) updateFields.priority = data.priority
     if ('startDate' in data && data.startDate) updateFields.startDate = new Date(data.startDate)
     if ('endDate' in data && data.endDate) updateFields.endDate = new Date(data.endDate)
+    if ('deadline' in data) updateFields.deadline = data.deadline ? new Date(data.deadline) : null
     if ('isAllDay' in data) updateFields.isAllDay = data.isAllDay
     if ('calendarId' in data) {
       updateFields.calendarId = data.calendarId ? new Types.ObjectId(data.calendarId) : null
@@ -330,6 +332,9 @@ export const calendarRepository = {
     if ('checklist' in data) updateFields.checklist = data.checklist
     if ('reminders' in data) updateFields.reminders = data.reminders
     if ('recurrence' in data) updateFields.recurrence = data.recurrence
+    if ('startDate' in data || 'endDate' in data || 'deadline' in data || 'reminders' in data || 'recurrence' in data) {
+      updateFields.remindersSent = []
+    }
 
     return EventModel.findOneAndUpdate(
       { _id: eventId, userId },

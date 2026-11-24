@@ -9,6 +9,7 @@ import type {
   EventPriority,
   EventVisibility,
   RecurrenceConfig,
+  RecurringUpdateMode,
   ReminderItem,
   SubtaskItem,
   UpdateCategoryInput,
@@ -49,6 +50,39 @@ const isValidUrl = (url: string): boolean => {
   } catch {
     return false
   }
+}
+
+const MAX_REMINDERS = 10
+const MAX_REMINDER_MINUTES = 40320
+const MAX_CHECKLIST_ITEMS = 50
+const MAX_CHECKLIST_TITLE_LENGTH = 150
+
+function firstFailure(...checks: Array<string | null>): string | undefined {
+  return checks.find((check): check is string => check !== null)
+}
+
+function validateReminderRules(reminders: ReminderItem[]): string | undefined {
+  const outOfRange = reminders.some(
+    ({ minutesBefore }) => !Number.isInteger(minutesBefore) || minutesBefore < 0 || minutesBefore > MAX_REMINDER_MINUTES,
+  )
+  const duplicated = reminders.some(
+    (reminder, index) =>
+      reminders.findIndex((item) => item.method === reminder.method && item.minutesBefore === reminder.minutesBefore) !== index,
+  )
+  return firstFailure(
+    reminders.length > MAX_REMINDERS ? `Tối đa ${MAX_REMINDERS} mốc nhắc` : null,
+    outOfRange ? 'Mốc nhắc phải từ 0 đến 40320 phút (tối đa 4 tuần)' : null,
+    duplicated ? 'Không được trùng kênh nhắc ở cùng thời điểm' : null,
+  )
+}
+
+function validateChecklistRules(items: SubtaskItem[]): string | undefined {
+  return firstFailure(
+    items.length > MAX_CHECKLIST_ITEMS ? `Checklist tối đa ${MAX_CHECKLIST_ITEMS} bước` : null,
+    items.some((item) => item.title.length > MAX_CHECKLIST_TITLE_LENGTH)
+      ? `Mỗi bước tối đa ${MAX_CHECKLIST_TITLE_LENGTH} ký tự`
+      : null,
+  )
 }
 
 function validateCalendarSettings(input: unknown, errors: Record<string, string>): CalendarSettings | undefined {
@@ -254,6 +288,19 @@ export const validateCreateEvent = (input: unknown): CreateEventInput => {
     }
   }
 
+  let rawDeadline: string | null = null
+  if ('deadline' in data && data.deadline !== undefined && data.deadline !== null) {
+    const val = typeof data.deadline === 'string' ? data.deadline.trim() : ''
+    if (val) {
+      const parsedDeadline = new Date(val)
+      if (Number.isNaN(parsedDeadline.getTime())) {
+        errors.deadline = 'Hạn chót không hợp lệ'
+      } else {
+        rawDeadline = parsedDeadline.toISOString()
+      }
+    }
+  }
+
   const rawDescription = typeof data.description === 'string' ? data.description.trim() : ''
   if (rawDescription.length > 2000) {
     errors.description = 'Nội dung mô tả không được vượt quá 2000 ký tự'
@@ -299,7 +346,7 @@ export const validateCreateEvent = (input: unknown): CreateEventInput => {
       .filter((r): r is Record<string, unknown> => Boolean(r && typeof r === 'object'))
       .map((r) => ({
         method: r.method === 'email' ? ('email' as const) : ('in-app' as const),
-        minutesBefore: typeof r.minutesBefore === 'number' && r.minutesBefore >= 0 ? r.minutesBefore : 15,
+        minutesBefore: typeof r.minutesBefore === 'number' ? r.minutesBefore : Number.NaN,
       }))
   }
 
@@ -321,6 +368,20 @@ export const validateCreateEvent = (input: unknown): CreateEventInput => {
     }
   }
 
+  const deadlineError = firstFailure(
+    rawDeadline && parsedStart && Date.parse(rawDeadline) < parsedStart.getTime()
+      ? 'Hạn chót không được sớm hơn thời gian bắt đầu'
+      : null,
+    rawDeadline && validatedRecurrence ? 'Nhiệm vụ lặp lại không được có hạn chót' : null,
+  )
+  if (deadlineError && !errors.deadline) errors.deadline = deadlineError
+
+  const reminderError = validateReminderRules(validatedReminders)
+  if (reminderError) errors.reminders = reminderError
+
+  const checklistError = validateChecklistRules(validatedChecklist)
+  if (checklistError) errors.checklist = checklistError
+
   const validatedGuests = parseGuests(data.guests)
   const rawTimeZone = typeof data.timeZone === 'string' ? data.timeZone.trim() : ''
 
@@ -334,6 +395,7 @@ export const validateCreateEvent = (input: unknown): CreateEventInput => {
     priority: rawPriority,
     startDate: rawStartDate,
     endDate: rawEndDate,
+    deadline: rawDeadline,
     isAllDay: Boolean(data.isAllDay),
     calendarId,
     description: rawDescription,
@@ -426,6 +488,22 @@ export const validateUpdateEvent = (input: unknown): UpdateEventInput => {
     }
   }
 
+  if ('deadline' in data) {
+    if (data.deadline === null || data.deadline === '') {
+      result.deadline = null
+    } else {
+      const val = typeof data.deadline === 'string' ? data.deadline.trim() : ''
+      if (val) {
+        const parsedDeadline = new Date(val)
+        if (Number.isNaN(parsedDeadline.getTime())) {
+          errors.deadline = 'Hạn chót không hợp lệ'
+        } else {
+          result.deadline = parsedDeadline.toISOString()
+        }
+      }
+    }
+  }
+
   if ('description' in data) {
     const desc = typeof data.description === 'string' ? data.description.trim() : ''
     if (desc.length > 2000) {
@@ -499,8 +577,22 @@ export const validateUpdateEvent = (input: unknown): UpdateEventInput => {
       .filter((r): r is Record<string, unknown> => Boolean(r && typeof r === 'object'))
       .map((r) => ({
         method: r.method === 'email' ? ('email' as const) : ('in-app' as const),
-        minutesBefore: typeof r.minutesBefore === 'number' && r.minutesBefore >= 0 ? r.minutesBefore : 15,
+        minutesBefore: typeof r.minutesBefore === 'number' ? r.minutesBefore : Number.NaN,
       }))
+  }
+
+  if (result.deadline && parsedStart && Date.parse(result.deadline) < parsedStart.getTime()) {
+    errors.deadline = 'Hạn chót không được sớm hơn thời gian bắt đầu'
+  }
+
+  if (result.checklist) {
+    const checklistError = validateChecklistRules(result.checklist)
+    if (checklistError) errors.checklist = checklistError
+  }
+
+  if (result.reminders) {
+    const reminderError = validateReminderRules(result.reminders)
+    if (reminderError) errors.reminders = reminderError
   }
 
   if ('recurrence' in data && data.recurrence && typeof data.recurrence === 'object') {
@@ -516,6 +608,13 @@ export const validateUpdateEvent = (input: unknown): UpdateEventInput => {
       until: typeof rec.until === 'string' ? rec.until : null,
       count: typeof rec.count === 'number' ? rec.count : null,
     }
+    if (freq !== 'none') {
+      if (result.deadline) {
+        errors.deadline = errors.deadline ?? 'Nhiệm vụ lặp lại không được có hạn chót'
+      } else {
+        result.deadline = null
+      }
+    }
   }
 
   if ('timeZone' in data && typeof data.timeZone === 'string') {
@@ -524,6 +623,17 @@ export const validateUpdateEvent = (input: unknown): UpdateEventInput => {
 
   if ('guests' in data) {
     result.guests = parseGuests(data.guests)
+  }
+
+  if ('mode' in data && typeof data.mode === 'string') {
+    const validModes: RecurringUpdateMode[] = ['this', 'following', 'all', 'all_this_weekday']
+    if (validModes.includes(data.mode as RecurringUpdateMode)) {
+      result.mode = data.mode as RecurringUpdateMode
+    }
+  }
+
+  if ('targetDate' in data && typeof data.targetDate === 'string' && data.targetDate.trim()) {
+    result.targetDate = data.targetDate.trim()
   }
 
   if (Object.keys(errors).length > 0) {
