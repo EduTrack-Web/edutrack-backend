@@ -21,7 +21,10 @@ export const checkAndSendReminders = async (): Promise<void> => {
       $or: [
         {
           'recurrence.frequency': 'none',
-          startDate: { $gte: twoHoursAgo, $lte: twoDaysLater },
+          $or: [
+            { startDate: { $gte: twoHoursAgo, $lte: twoDaysLater } },
+            { deadline: { $gte: twoHoursAgo, $lte: twoDaysLater } },
+          ],
         },
         {
           'recurrence.frequency': { $ne: 'none' },
@@ -34,7 +37,11 @@ export const checkAndSendReminders = async (): Promise<void> => {
       const occurrences: Date[] = []
 
       if (!event.recurrence || event.recurrence.frequency === 'none') {
-        occurrences.push(new Date(event.startDate))
+        if (event.entryType === 'task' && event.deadline) {
+          occurrences.push(new Date(event.deadline))
+        } else {
+          occurrences.push(new Date(event.startDate))
+        }
       } else {
         const baseStart = new Date(event.startDate)
         const freq = event.recurrence.frequency
@@ -102,13 +109,19 @@ export const checkAndSendReminders = async (): Promise<void> => {
             const acceptedGuests = (event.guests || []).filter((g) => g.status === 'accepted')
             const durationText = formatDuration(minutesBefore)
 
+            const isTask = event.entryType === 'task'
+            const reminderTitle = isTask ? `Nhắc nhở hạn chót: ${event.title}` : `Nhắc nhở: ${event.title}`
+            const reminderMessage = isTask
+              ? `Nhiệm vụ "${event.title}" sắp đến hạn chót sau ${durationText}.`
+              : `Sự kiện "${event.title}" sẽ diễn ra sau ${durationText}.`
+
             if (method === 'in-app') {
               if (owner) {
                 void notificationService.createNotification({
                   userId: String(owner._id),
                   type: 'event_reminder',
-                  title: `Nhắc nhở: ${event.title}`,
-                  message: `Sự kiện "${event.title}" sẽ diễn ra sau ${durationText}.`,
+                  title: reminderTitle,
+                  message: reminderMessage,
                   eventId: String(event._id),
                   link: '/calendar',
                   metadata: {
@@ -127,8 +140,8 @@ export const checkAndSendReminders = async (): Promise<void> => {
                   void notificationService.createNotification({
                     userId: String(guestUser._id),
                     type: 'event_reminder',
-                    title: `Nhắc nhở: ${event.title}`,
-                    message: `Sự kiện "${event.title}" sẽ diễn ra sau ${durationText}.`,
+                    title: reminderTitle,
+                    message: reminderMessage,
                     eventId: String(event._id),
                     link: '/calendar',
                     metadata: {
