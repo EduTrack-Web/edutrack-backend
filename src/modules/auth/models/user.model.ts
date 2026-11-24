@@ -22,6 +22,11 @@ const userSchema = new Schema(
     lastLoginAt: { type: Date },
     lastActiveAt: { type: Date },
     lastUsernameChangedAt: { type: Date },
+    preferences: {
+      calendar: {
+        showLunarCalendar: { type: Boolean, default: false, required: true },
+      },
+    },
   },
   { timestamps: true },
 )

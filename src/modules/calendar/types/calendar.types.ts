@@ -167,3 +167,28 @@ export interface EventQueryFilters {
   isCompleted?: boolean
   q?: string
 }
+
+export interface CalendarPreferences {
+  showLunarCalendar: boolean
+}
+
+export interface VietnameseLunarDate {
+  solarDate: string
+  lunarDay: number
+  lunarMonth: number
+  lunarYear: number
+  isLeapMonth: boolean
+  alternateLunar?: {
+    label: string
+    lunarDay: number
+    lunarMonth: number
+    lunarYear: number
+    isLeapMonth: boolean
+  }
+}
+
+export interface DateOnlyParts {
+  year: number
+  month: number
+  day: number
+}
