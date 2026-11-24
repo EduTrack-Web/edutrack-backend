@@ -1,10 +1,40 @@
 import type { RequestHandler } from 'express'
 import type { AuthenticatedRequestLocals } from '@/shared/middleware/authenticate.js'
 import { calendarService } from '@/modules/calendar/services/calendar.service.js'
+import { lunarCalendarService } from '@/modules/calendar/services/lunar-calendar.service.js'
 import type { EventQueryFilters } from '@/modules/calendar/types/calendar.types.js'
 
 const userIdFrom = (locals: Record<string, unknown>): string =>
   (locals.auth as AuthenticatedRequestLocals).userId
+
+export const getCalendarPreferences: RequestHandler = async (_request, response) => {
+  const preferences = await lunarCalendarService.getPreferences(userIdFrom(response.locals))
+  response.json({ success: true, data: { preferences } })
+}
+
+export const updateCalendarPreferences: RequestHandler = async (request, response) => {
+  const preferences = await lunarCalendarService.updatePreferences(
+    userIdFrom(response.locals),
+    request.body,
+  )
+  response.json({
+    success: true,
+    data: { preferences },
+    message: 'Đã cập nhật cài đặt hiển thị lịch.',
+  })
+}
+
+export const getVietnameseLunarDates: RequestHandler = async (request, response) => {
+  const dates = lunarCalendarService.getDates(request.query.from, request.query.to)
+  response.json({
+    success: true,
+    data: {
+      dates,
+      timeZone: 'Asia/Ho_Chi_Minh',
+      timeZoneOffset: 7,
+    },
+  })
+}
 
 export const getCategories: RequestHandler = async (_request, response) => {
   const userId = userIdFrom(response.locals)

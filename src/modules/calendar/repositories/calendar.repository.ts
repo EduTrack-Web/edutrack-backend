@@ -1,6 +1,7 @@
 import { Types } from 'mongoose'
 import { CalendarCategoryModel } from '../models/calendar-category.model.js'
 import { EventModel } from '../models/event.model.js'
+import { UserModel } from '@/modules/auth/models/user.model.js'
 import type {
   CreateCategoryInput,
   CreateEventInput,
@@ -12,6 +13,16 @@ import type {
 const isValidObjectId = (id: string): boolean => Types.ObjectId.isValid(id)
 
 export const calendarRepository = {
+  findCalendarPreferences: (userId: string) =>
+    UserModel.findById(userId).select('preferences.calendar').lean(),
+
+  updateCalendarPreferences: (userId: string, showLunarCalendar: boolean) =>
+    UserModel.findByIdAndUpdate(
+      userId,
+      { $set: { 'preferences.calendar.showLunarCalendar': showLunarCalendar } },
+      { returnDocument: 'after', runValidators: true },
+    ).select('preferences.calendar').lean(),
+
   findCategoriesByUserId: async (userId: string) => {
     const legacyNames = [
       'Bài tập & Hạn chót',
