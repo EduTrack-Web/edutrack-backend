@@ -54,6 +54,10 @@ const eventSchema = new Schema(
       type: Date,
       required: true,
     },
+    deadline: {
+      type: Date,
+      default: null,
+    },
     isAllDay: {
       type: Boolean,
       default: false,
