@@ -8,13 +8,26 @@ import {
   validateLunarDateRange,
 } from '@/modules/calendar/validations/lunar-calendar.validation.js'
 
-const readShowLunarCalendar = (value: unknown): boolean => {
-  if (typeof value !== 'object' || value === null || !('preferences' in value)) return false
+const readCalendarPreferences = (value: unknown): CalendarPreferences => {
+  const defaults: CalendarPreferences = {
+    showLunarCalendar: false,
+    showVietnameseHolidays: true,
+    showPublicHolidays: true,
+    showObservanceHolidays: true,
+  }
+  if (typeof value !== 'object' || value === null || !('preferences' in value)) return defaults
   const preferences = (value as { preferences?: unknown }).preferences
-  if (typeof preferences !== 'object' || preferences === null || !('calendar' in preferences)) return false
+  if (typeof preferences !== 'object' || preferences === null || !('calendar' in preferences)) return defaults
   const calendar = (preferences as { calendar?: unknown }).calendar
-  if (typeof calendar !== 'object' || calendar === null || !('showLunarCalendar' in calendar)) return false
-  return (calendar as { showLunarCalendar?: unknown }).showLunarCalendar === true
+  if (typeof calendar !== 'object' || calendar === null) return defaults
+
+  const record = calendar as Record<string, unknown>
+  return {
+    showLunarCalendar: record.showLunarCalendar === true,
+    showVietnameseHolidays: record.showVietnameseHolidays !== false,
+    showPublicHolidays: record.showPublicHolidays !== false,
+    showObservanceHolidays: record.showObservanceHolidays !== false,
+  }
 }
 
 export class LunarCalendarService {
@@ -23,14 +36,14 @@ export class LunarCalendarService {
   public async getPreferences(userId: string): Promise<CalendarPreferences> {
     const user = await calendarRepository.findCalendarPreferences(userId)
     if (!user) throw new AppError(404, 'USER_NOT_FOUND', 'Không tìm thấy tài khoản.')
-    return { showLunarCalendar: readShowLunarCalendar(user) }
+    return readCalendarPreferences(user)
   }
 
   public async updatePreferences(userId: string, input: unknown): Promise<CalendarPreferences> {
-    const showLunarCalendar = validateCalendarPreferencesInput(input)
-    const user = await calendarRepository.updateCalendarPreferences(userId, showLunarCalendar)
+    const validated = validateCalendarPreferencesInput(input)
+    const user = await calendarRepository.updateCalendarPreferences(userId, validated)
     if (!user) throw new AppError(404, 'USER_NOT_FOUND', 'Không tìm thấy tài khoản.')
-    return { showLunarCalendar: readShowLunarCalendar(user) }
+    return readCalendarPreferences(user)
   }
 
   public getDates(fromValue: unknown, toValue: unknown): VietnameseLunarDate[] {
