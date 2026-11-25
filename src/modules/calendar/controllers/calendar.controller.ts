@@ -232,10 +232,15 @@ export const toggleTaskComplete: RequestHandler = async (request, response) => {
   const userId = userIdFrom(response.locals)
   const { eventId } = request.params
   const isCompleted = Boolean(request.body.isCompleted)
+  const rawMode = request.body.mode
+  const mode = rawMode === 'this' || rawMode === 'following' || rawMode === 'all' ? rawMode : undefined
+  const targetDate = typeof request.body.targetDate === 'string' ? request.body.targetDate : undefined
   const event = await calendarService.toggleTaskComplete(
     userId,
     typeof eventId === 'string' ? eventId : '',
     isCompleted,
+    mode,
+    targetDate,
   )
   response.json({
     success: true,

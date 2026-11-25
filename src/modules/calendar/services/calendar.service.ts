@@ -12,6 +12,7 @@ import type {
   CalendarEventResponse,
   EventQueryFilters,
   RecurrenceConfig,
+  RecurrenceFrequency,
   ReminderItem,
   SubtaskItem,
 } from '../types/calendar.types.js'
@@ -68,14 +69,44 @@ interface RawEventDoc {
   checklist?: SubtaskItem[]
   reminders?: ReminderItem[]
   recurrence?: {
-    frequency: 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly'
+    frequency: RecurrenceFrequency
     interval: number
     daysOfWeek?: number[]
     until?: Date | null
     count?: number | null
   }
+  exceptionDates?: (Date | string)[]
+  recurringEventId?: unknown
+  originalStartDate?: Date | string | null
   createdAt?: Date
   updatedAt?: Date
+}
+
+const toDateKey = (date: Date | string, timeZone = 'Asia/Ho_Chi_Minh'): string => {
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date(date))
+  } catch {
+    return new Date(date).toISOString().slice(0, 10)
+  }
+}
+
+const resolveCategoryObjectId = (val: unknown): Types.ObjectId | null => {
+  if (!val) return null
+  if (val instanceof Types.ObjectId) return val
+  if (typeof val === 'object' && '_id' in val) {
+    const inner = (val as { _id: unknown })._id
+    if (inner instanceof Types.ObjectId) return inner
+    if (typeof inner === 'string' && Types.ObjectId.isValid(inner)) return new Types.ObjectId(inner)
+  }
+  if (typeof val === 'string' && Types.ObjectId.isValid(val)) {
+    return new Types.ObjectId(val)
+  }
+  return null
 }
 
 const mapCategoryResponse = (doc: RawCategoryDoc): CalendarCategoryResponse => ({
@@ -483,6 +514,175 @@ export const calendarService = {
       }
     }
 
+    const mode = data.mode
+    const targetDateStr = data.targetDate
+    delete data.mode
+    delete data.targetDate
+
+    if (existing.recurrence && existing.recurrence.frequency !== 'none' && mode && mode !== 'all' && targetDateStr) {
+      const targetDate = new Date(targetDateStr)
+      const baseStart = new Date(existing.startDate)
+      const origDuration = Math.max(0, new Date(existing.endDate).getTime() - baseStart.getTime())
+      const eventZone = data.timeZone || existing.timeZone || 'Asia/Ho_Chi_Minh'
+      const targetDateKey = toDateKey(targetDate, eventZone)
+      const baseStartKey = toDateKey(baseStart, eventZone)
+
+      if (mode === 'this') {
+        await EventModel.updateOne(
+          { _id: eventId },
+          { $addToSet: { exceptionDates: targetDate } },
+        )
+
+        const rawEventData = {
+          userId: new Types.ObjectId(rawOwnerId),
+          calendarId:
+            data.calendarId !== undefined
+              ? resolveCategoryObjectId(data.calendarId)
+              : resolveCategoryObjectId(existing.calendarId),
+          entryType: data.entryType || existing.entryType,
+          title: data.title || existing.title,
+          description: data.description !== undefined ? data.description : (existing.description ?? ''),
+          priority: data.priority || existing.priority,
+          startDate: data.startDate ? new Date(data.startDate) : targetDate,
+          endDate: data.endDate ? new Date(data.endDate) : new Date(targetDate.getTime() + origDuration),
+          isAllDay: data.isAllDay !== undefined ? data.isAllDay : existing.isAllDay,
+          location: data.location !== undefined ? data.location : (existing.location ?? ''),
+          onlineMeetingUrl:
+            data.onlineMeetingUrl !== undefined ? data.onlineMeetingUrl : (existing.onlineMeetingUrl ?? ''),
+          submissionUrl: data.submissionUrl !== undefined ? data.submissionUrl : (existing.submissionUrl ?? ''),
+          color: data.color ?? existing.color,
+          availability: data.availability || existing.availability,
+          visibility: data.visibility || existing.visibility,
+          timeZone: data.timeZone ?? existing.timeZone,
+          guests: data.guests || existing.guests,
+          checklist: data.checklist || existing.checklist,
+          reminders: data.reminders || existing.reminders,
+          recurrence: { frequency: 'none' as const, interval: 1, daysOfWeek: [], until: null, count: null },
+          exceptionDates: [],
+          recurringEventId: new Types.ObjectId(eventId),
+          originalStartDate: targetDate,
+          remindersSent: [],
+        }
+
+        const createdStandalone = await EventModel.create(rawEventData)
+        const populated = await calendarRepository.findEventById(
+          rawOwnerId,
+          String(createdStandalone._id),
+          user?.email,
+        )
+        return mapEventResponse((populated ?? createdStandalone) as unknown as RawEventDoc)
+      }
+
+      if (mode === 'following' && targetDateKey > baseStartKey) {
+        const untilDate = new Date(targetDate.getTime() - 1000)
+        const existingExceptions = Array.isArray(existing.exceptionDates)
+          ? existing.exceptionDates.map((d) => (d instanceof Date ? d : new Date(d as unknown as string)))
+          : []
+        const pastExceptions = existingExceptions.filter((ex) => toDateKey(ex, eventZone) < targetDateKey)
+        const futureExceptions = existingExceptions.filter((ex) => toDateKey(ex, eventZone) > targetDateKey)
+
+        await EventModel.updateOne(
+          { _id: eventId },
+          {
+            $set: {
+              'recurrence.until': untilDate,
+              'recurrence.count': null,
+              exceptionDates: pastExceptions,
+            },
+          },
+        )
+
+        const newStart = data.startDate ? new Date(data.startDate) : targetDate
+        const newEnd = data.endDate ? new Date(data.endDate) : new Date(newStart.getTime() + origDuration)
+
+        const rawEventData = {
+          userId: new Types.ObjectId(rawOwnerId),
+          calendarId:
+            data.calendarId !== undefined
+              ? resolveCategoryObjectId(data.calendarId)
+              : resolveCategoryObjectId(existing.calendarId),
+          entryType: data.entryType || existing.entryType,
+          title: data.title || existing.title,
+          description: data.description !== undefined ? data.description : (existing.description ?? ''),
+          priority: data.priority || existing.priority,
+          startDate: newStart,
+          endDate: newEnd,
+          isAllDay: data.isAllDay !== undefined ? data.isAllDay : existing.isAllDay,
+          location: data.location !== undefined ? data.location : (existing.location ?? ''),
+          onlineMeetingUrl:
+            data.onlineMeetingUrl !== undefined ? data.onlineMeetingUrl : (existing.onlineMeetingUrl ?? ''),
+          submissionUrl: data.submissionUrl !== undefined ? data.submissionUrl : (existing.submissionUrl ?? ''),
+          color: data.color ?? existing.color,
+          availability: data.availability || existing.availability,
+          visibility: data.visibility || existing.visibility,
+          timeZone: data.timeZone ?? existing.timeZone,
+          guests: data.guests || existing.guests,
+          checklist: data.checklist || existing.checklist,
+          reminders: data.reminders || existing.reminders,
+          recurrence: data.recurrence
+            ? {
+                frequency: data.recurrence.frequency,
+                interval: data.recurrence.interval || 1,
+                daysOfWeek: data.recurrence.daysOfWeek || [],
+                until: data.recurrence.until
+                  ? new Date(data.recurrence.until)
+                  : existing.recurrence.until
+                    ? new Date(existing.recurrence.until)
+                    : null,
+                count: null,
+              }
+            : {
+                frequency: (existing.recurrence.frequency || 'daily') as RecurrenceFrequency,
+                interval: existing.recurrence.interval || 1,
+                daysOfWeek: existing.recurrence.daysOfWeek || [],
+                until: existing.recurrence.until ? new Date(existing.recurrence.until) : null,
+                count: null,
+              },
+          exceptionDates: futureExceptions,
+          remindersSent: [],
+        }
+
+        const createdFollowing = await EventModel.create(rawEventData)
+        await EventModel.updateMany(
+          {
+            userId: new Types.ObjectId(rawOwnerId),
+            recurringEventId: new Types.ObjectId(eventId),
+            originalStartDate: { $gte: targetDate },
+          },
+          { $set: { recurringEventId: createdFollowing._id } },
+        )
+
+        const populated = await calendarRepository.findEventById(
+          rawOwnerId,
+          String(createdFollowing._id),
+          user?.email,
+        )
+        return mapEventResponse((populated ?? createdFollowing) as unknown as RawEventDoc)
+      }
+    }
+
+    if (existing.recurrence && existing.recurrence.frequency !== 'none' && data.startDate && data.endDate) {
+      const origBaseStart = new Date(existing.startDate)
+      const newStart = new Date(data.startDate)
+      const duration = Math.max(0, new Date(data.endDate).getTime() - newStart.getTime())
+
+      const updatedBaseStart = new Date(origBaseStart)
+      updatedBaseStart.setHours(
+        newStart.getHours(),
+        newStart.getMinutes(),
+        newStart.getSeconds(),
+        newStart.getMilliseconds(),
+      )
+      const updatedBaseEnd = new Date(updatedBaseStart.getTime() + duration)
+
+      data.startDate = updatedBaseStart.toISOString()
+      data.endDate = updatedBaseEnd.toISOString()
+
+      if (data.recurrence && data.recurrence.frequency === 'none') {
+        data.exceptionDates = []
+      }
+    }
+
     const updated = await calendarRepository.updateEvent(rawOwnerId, eventId, data)
     if (!updated) {
       throw new AppError(404, 'EVENT_NOT_FOUND', 'Không tìm thấy sự kiện yêu cầu')
@@ -685,6 +885,10 @@ export const calendarService = {
 
     if (existing.recurrence && existing.recurrence.frequency !== 'none' && mode && mode !== 'all' && targetDateStr) {
       const targetDate = new Date(targetDateStr)
+      const baseStart = new Date(existing.startDate)
+      const eventZone = existing.timeZone || 'Asia/Ho_Chi_Minh'
+      const targetDateKey = toDateKey(targetDate, eventZone)
+      const baseStartKey = toDateKey(baseStart, eventZone)
 
       if (mode === 'this') {
         await EventModel.updateOne(
@@ -695,31 +899,163 @@ export const calendarService = {
       }
 
       if (mode === 'following') {
-        const baseStart = new Date(existing.startDate)
-        if (targetDate.getTime() <= baseStart.getTime()) {
+        if (targetDateKey <= baseStartKey) {
           await calendarRepository.deleteEvent(userId, eventId)
+          await EventModel.deleteMany({ userId, recurringEventId: eventId })
           return
         }
         const untilDate = new Date(targetDate.getTime() - 1000)
+        const existingExceptions = Array.isArray(existing.exceptionDates)
+          ? existing.exceptionDates.map((d) => (d instanceof Date ? d : new Date(d as unknown as string)))
+          : []
+        const pastExceptions = existingExceptions.filter((ex) => toDateKey(ex, eventZone) < targetDateKey)
+
         await EventModel.updateOne(
           { _id: eventId, userId },
-          { $set: { 'recurrence.until': untilDate } },
+          {
+            $set: {
+              'recurrence.until': untilDate,
+              'recurrence.count': null,
+              exceptionDates: pastExceptions,
+            },
+          },
         )
+        await EventModel.deleteMany({
+          userId,
+          recurringEventId: eventId,
+          originalStartDate: { $gte: targetDate },
+        })
         return
       }
     }
 
     await calendarRepository.deleteEvent(userId, eventId)
+    if (existing.recurrence && existing.recurrence.frequency !== 'none') {
+      await EventModel.deleteMany({ userId, recurringEventId: eventId })
+    }
   },
 
   toggleTaskComplete: async (
     userId: string,
     eventId: string,
     isCompleted: boolean,
+    mode?: 'this' | 'following' | 'all',
+    targetDateStr?: string,
   ): Promise<CalendarEventResponse> => {
     const existing = await calendarRepository.findEventById(userId, eventId)
     if (!existing) {
       throw new AppError(404, 'EVENT_NOT_FOUND', 'Không tìm thấy nhiệm vụ yêu cầu')
+    }
+
+    if (existing.recurrence && existing.recurrence.frequency !== 'none' && mode && mode !== 'all' && targetDateStr) {
+      const targetDate = new Date(targetDateStr)
+      const baseStart = new Date(existing.startDate)
+      const origDuration = Math.max(0, new Date(existing.endDate).getTime() - baseStart.getTime())
+      const eventZone = existing.timeZone || 'Asia/Ho_Chi_Minh'
+      const targetDateKey = toDateKey(targetDate, eventZone)
+      const baseStartKey = toDateKey(baseStart, eventZone)
+      const completedAt = isCompleted ? new Date() : null
+
+      if (mode === 'this') {
+        await EventModel.updateOne(
+          { _id: eventId, userId },
+          { $addToSet: { exceptionDates: targetDate } },
+        )
+
+        const createdStandalone = await EventModel.create({
+          userId: new Types.ObjectId(userId),
+          calendarId: resolveCategoryObjectId(existing.calendarId),
+          entryType: existing.entryType,
+          title: existing.title,
+          description: existing.description ?? '',
+          priority: existing.priority,
+          startDate: targetDate,
+          endDate: new Date(targetDate.getTime() + origDuration),
+          isAllDay: existing.isAllDay,
+          location: existing.location ?? '',
+          onlineMeetingUrl: existing.onlineMeetingUrl ?? '',
+          submissionUrl: existing.submissionUrl ?? '',
+          color: existing.color,
+          availability: existing.availability,
+          visibility: existing.visibility,
+          timeZone: existing.timeZone,
+          guests: existing.guests || [],
+          checklist: existing.checklist || [],
+          reminders: existing.reminders || [],
+          isCompleted,
+          completedAt,
+          recurrence: { frequency: 'none' as const, interval: 1, daysOfWeek: [], until: null, count: null },
+          exceptionDates: [],
+          recurringEventId: new Types.ObjectId(eventId),
+          originalStartDate: targetDate,
+          remindersSent: [],
+        })
+        return mapEventResponse(createdStandalone as unknown as RawEventDoc)
+      }
+
+      if (mode === 'following' && targetDateKey > baseStartKey) {
+        const untilDate = new Date(targetDate.getTime() - 1000)
+        const existingExceptions = Array.isArray(existing.exceptionDates)
+          ? existing.exceptionDates.map((d) => (d instanceof Date ? d : new Date(d as unknown as string)))
+          : []
+        const pastExceptions = existingExceptions.filter((ex) => toDateKey(ex, eventZone) < targetDateKey)
+        const futureExceptions = existingExceptions.filter((ex) => toDateKey(ex, eventZone) > targetDateKey)
+
+        await EventModel.updateOne(
+          { _id: eventId, userId },
+          {
+            $set: {
+              'recurrence.until': untilDate,
+              'recurrence.count': null,
+              exceptionDates: pastExceptions,
+            },
+          },
+        )
+
+        const createdFollowing = await EventModel.create({
+          userId: new Types.ObjectId(userId),
+          calendarId: resolveCategoryObjectId(existing.calendarId),
+          entryType: existing.entryType,
+          title: existing.title,
+          description: existing.description ?? '',
+          priority: existing.priority,
+          startDate: targetDate,
+          endDate: new Date(targetDate.getTime() + origDuration),
+          isAllDay: existing.isAllDay,
+          location: existing.location ?? '',
+          onlineMeetingUrl: existing.onlineMeetingUrl ?? '',
+          submissionUrl: existing.submissionUrl ?? '',
+          color: existing.color,
+          availability: existing.availability,
+          visibility: existing.visibility,
+          timeZone: existing.timeZone,
+          guests: existing.guests || [],
+          checklist: existing.checklist || [],
+          reminders: existing.reminders || [],
+          isCompleted,
+          completedAt,
+          recurrence: {
+            frequency: (existing.recurrence.frequency || 'daily') as RecurrenceFrequency,
+            interval: existing.recurrence.interval || 1,
+            daysOfWeek: existing.recurrence.daysOfWeek || [],
+            until: existing.recurrence.until ? new Date(existing.recurrence.until) : null,
+            count: null,
+          },
+          exceptionDates: futureExceptions,
+          remindersSent: [],
+        })
+
+        await EventModel.updateMany(
+          {
+            userId: new Types.ObjectId(userId),
+            recurringEventId: new Types.ObjectId(eventId),
+            originalStartDate: { $gte: targetDate },
+          },
+          { $set: { recurringEventId: createdFollowing._id } },
+        )
+
+        return mapEventResponse(createdFollowing as unknown as RawEventDoc)
+      }
     }
 
     const updated = await calendarRepository.toggleTaskComplete(userId, eventId, isCompleted)
