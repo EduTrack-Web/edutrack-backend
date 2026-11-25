@@ -163,7 +163,7 @@ export interface UpdateEventInput {
   checklist?: SubtaskItem[]
   reminders?: ReminderItem[]
   recurrence?: RecurrenceConfig
-  mode?: 'this' | 'following' | 'all'
+  mode?: RecurringUpdateMode
   targetDate?: string
   exceptionDates?: string[] | Date[]
 }
