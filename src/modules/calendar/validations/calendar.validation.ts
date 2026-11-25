@@ -246,9 +246,8 @@ export const validateCreateEvent = (input: unknown): CreateEventInput => {
   const data = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>
 
   const rawTitle = typeof data.title === 'string' ? data.title.trim() : ''
-  if (!rawTitle) {
-    errors.title = 'Vui lòng nhập tiêu đề'
-  } else if (rawTitle.length > 150) {
+  const normalizedTitle = rawTitle || 'Không có tiêu đề'
+  if (normalizedTitle.length > 150) {
     errors.title = 'Tiêu đề không được vượt quá 150 ký tự'
   }
 
@@ -390,7 +389,7 @@ export const validateCreateEvent = (input: unknown): CreateEventInput => {
   }
 
   return {
-    title: rawTitle,
+    title: normalizedTitle,
     entryType: rawEntryType,
     priority: rawPriority,
     startDate: rawStartDate,
@@ -420,12 +419,11 @@ export const validateUpdateEvent = (input: unknown): UpdateEventInput => {
 
   if ('title' in data) {
     const rawTitle = typeof data.title === 'string' ? data.title.trim() : ''
-    if (!rawTitle) {
-      errors.title = 'Tiêu đề không được để trống'
-    } else if (rawTitle.length > 150) {
+    const normalizedTitle = rawTitle || 'Không có tiêu đề'
+    if (normalizedTitle.length > 150) {
       errors.title = 'Tiêu đề không được vượt quá 150 ký tự'
     } else {
-      result.title = rawTitle
+      result.title = normalizedTitle
     }
   }
 
@@ -581,23 +579,19 @@ export const validateUpdateEvent = (input: unknown): UpdateEventInput => {
       }))
   }
 
-  if (result.deadline && parsedStart && Date.parse(result.deadline) < parsedStart.getTime()) {
-    errors.deadline = 'Hạn chót không được sớm hơn thời gian bắt đầu'
+  const rawMode = typeof data.mode === 'string' ? data.mode : undefined
+  if (rawMode === 'this' || rawMode === 'following' || rawMode === 'all') {
+    result.mode = rawMode
   }
 
-  if (result.checklist) {
-    const checklistError = validateChecklistRules(result.checklist)
-    if (checklistError) errors.checklist = checklistError
-  }
-
-  if (result.reminders) {
-    const reminderError = validateReminderRules(result.reminders)
-    if (reminderError) errors.reminders = reminderError
+  if (typeof data.targetDate === 'string' && !Number.isNaN(new Date(data.targetDate).getTime())) {
+    result.targetDate = new Date(data.targetDate).toISOString()
   }
 
   if ('recurrence' in data && data.recurrence && typeof data.recurrence === 'object') {
     const rec = data.recurrence as Record<string, unknown>
-    if (!isValidRecurrenceInput(rec, result.startDate)) errors.recurrence = 'Quy tắc lặp lại không hợp lệ. Kiểm tra chu kỳ (1–99), ngày kết thúc và số lần lặp (1–365).'
+    const startForRecurrenceCheck = rawMode === 'this' || rawMode === 'all' ? undefined : result.startDate
+    if (!isValidRecurrenceInput(rec, startForRecurrenceCheck)) errors.recurrence = 'Quy tắc lặp lại không hợp lệ. Kiểm tra chu kỳ (1–99), ngày kết thúc và số lần lặp (1–365).'
     const freq = typeof rec.frequency === 'string' && VALID_RECURRENCE.includes(rec.frequency)
       ? (rec.frequency as RecurrenceConfig['frequency'])
       : 'none'

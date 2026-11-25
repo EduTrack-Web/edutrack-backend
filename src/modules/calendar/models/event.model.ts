@@ -157,6 +157,15 @@ const eventSchema = new Schema(
       type: [Date],
       default: [],
     },
+    recurringEventId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Event',
+      default: null,
+    },
+    originalStartDate: {
+      type: Date,
+      default: null,
+    },
     remindersSent: {
       type: [
         new Schema(
