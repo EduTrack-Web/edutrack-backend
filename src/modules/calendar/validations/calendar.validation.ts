@@ -579,12 +579,15 @@ export const validateUpdateEvent = (input: unknown): UpdateEventInput => {
       }))
   }
 
-  const rawMode = typeof data.mode === 'string' ? data.mode : undefined
-  if (rawMode === 'this' || rawMode === 'following' || rawMode === 'all') {
+  const validModes: readonly RecurringUpdateMode[] = ['this', 'following', 'all', 'all_this_weekday']
+  const rawMode = typeof data.mode === 'string' && validModes.includes(data.mode as RecurringUpdateMode)
+    ? (data.mode as RecurringUpdateMode)
+    : undefined
+  if (rawMode) {
     result.mode = rawMode
   }
 
-  if (typeof data.targetDate === 'string' && !Number.isNaN(new Date(data.targetDate).getTime())) {
+  if (typeof data.targetDate === 'string' && data.targetDate.trim() && !Number.isNaN(new Date(data.targetDate).getTime())) {
     result.targetDate = new Date(data.targetDate).toISOString()
   }
 
@@ -617,17 +620,6 @@ export const validateUpdateEvent = (input: unknown): UpdateEventInput => {
 
   if ('guests' in data) {
     result.guests = parseGuests(data.guests)
-  }
-
-  if ('mode' in data && typeof data.mode === 'string') {
-    const validModes: RecurringUpdateMode[] = ['this', 'following', 'all', 'all_this_weekday']
-    if (validModes.includes(data.mode as RecurringUpdateMode)) {
-      result.mode = data.mode as RecurringUpdateMode
-    }
-  }
-
-  if ('targetDate' in data && typeof data.targetDate === 'string' && data.targetDate.trim()) {
-    result.targetDate = data.targetDate.trim()
   }
 
   if (Object.keys(errors).length > 0) {

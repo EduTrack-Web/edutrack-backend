@@ -530,192 +530,23 @@ export const calendarService = {
 
     if (existing.recurrence && existing.recurrence.frequency !== 'none' && mode && mode !== 'all' && targetDateStr) {
       const targetDate = new Date(targetDateStr)
-
-      if (mode === 'this') {
-        await EventModel.updateOne(
-          { _id: eventId },
-          { $addToSet: { exceptionDates: targetDate } },
-        )
-
-        const rawEventData = {
-          userId: existing.userId,
-          calendarId: data.calendarId !== undefined ? data.calendarId : existing.calendarId,
-          entryType: data.entryType || existing.entryType,
-          title: data.title || existing.title,
-          description: data.description !== undefined ? data.description : (existing.description ?? ''),
-          priority: data.priority || existing.priority,
-          startDate: data.startDate ? new Date(data.startDate) : targetDate,
-          endDate: data.endDate
-            ? new Date(data.endDate)
-            : new Date(targetDate.getTime() + (new Date(existing.endDate).getTime() - new Date(existing.startDate).getTime())),
-          deadline: data.deadline !== undefined ? (data.deadline ? new Date(data.deadline) : null) : (existing.deadline ? new Date(existing.deadline) : null),
-          isAllDay: data.isAllDay !== undefined ? data.isAllDay : existing.isAllDay,
-          location: data.location !== undefined ? data.location : (existing.location ?? ''),
-          onlineMeetingUrl: data.onlineMeetingUrl !== undefined ? data.onlineMeetingUrl : (existing.onlineMeetingUrl ?? ''),
-          submissionUrl: data.submissionUrl !== undefined ? data.submissionUrl : (existing.submissionUrl ?? ''),
-          color: data.color ?? existing.color,
-          availability: data.availability || existing.availability,
-          visibility: data.visibility || existing.visibility,
-          timeZone: data.timeZone || existing.timeZone,
-          guests: data.guests || existing.guests,
-          checklist: data.checklist || existing.checklist,
-          reminders: data.reminders || existing.reminders,
-          recurrence: { frequency: 'none' as const, interval: 1, daysOfWeek: [], until: null, count: null },
-          exceptionDates: [],
-          remindersSent: [],
-        }
-
-        const createdStandalone = await EventModel.create(rawEventData)
-        return mapEventResponse(createdStandalone as unknown as RawEventDoc)
-      }
-
-      if (mode === 'following') {
-        const baseStart = new Date(existing.startDate)
-        if (targetDate.getTime() <= baseStart.getTime()) {
-          const updated = await calendarRepository.updateEvent(rawOwnerId, eventId, data)
-          if (!updated) {
-            throw new AppError(404, 'EVENT_NOT_FOUND', 'Không tìm thấy sự kiện yêu cầu')
-          }
-          return mapEventResponse(updated as unknown as RawEventDoc)
-        }
-
-        const untilDate = new Date(targetDate.getTime() - 1000)
-        await EventModel.updateOne(
-          { _id: eventId },
-          { $set: { 'recurrence.until': untilDate } },
-        )
-
-        const rawEventData = {
-          userId: existing.userId,
-          calendarId: data.calendarId !== undefined ? data.calendarId : existing.calendarId,
-          entryType: data.entryType || existing.entryType,
-          title: data.title || existing.title,
-          description: data.description !== undefined ? data.description : (existing.description ?? ''),
-          priority: data.priority || existing.priority,
-          startDate: data.startDate ? new Date(data.startDate) : targetDate,
-          endDate: data.endDate
-            ? new Date(data.endDate)
-            : new Date(targetDate.getTime() + (new Date(existing.endDate).getTime() - new Date(existing.startDate).getTime())),
-          deadline: data.deadline !== undefined ? (data.deadline ? new Date(data.deadline) : null) : (existing.deadline ? new Date(existing.deadline) : null),
-          isAllDay: data.isAllDay !== undefined ? data.isAllDay : existing.isAllDay,
-          location: data.location !== undefined ? data.location : (existing.location ?? ''),
-          onlineMeetingUrl: data.onlineMeetingUrl !== undefined ? data.onlineMeetingUrl : (existing.onlineMeetingUrl ?? ''),
-          submissionUrl: data.submissionUrl !== undefined ? data.submissionUrl : (existing.submissionUrl ?? ''),
-          color: data.color ?? existing.color,
-          availability: data.availability || existing.availability,
-          visibility: data.visibility || existing.visibility,
-          timeZone: data.timeZone || existing.timeZone,
-          guests: data.guests || existing.guests,
-          checklist: data.checklist || existing.checklist,
-          reminders: data.reminders || existing.reminders,
-          recurrence: {
-            frequency: (existing.recurrence.frequency || 'daily') as RecurrenceFrequency,
-            interval: existing.recurrence.interval || 1,
-            daysOfWeek: existing.recurrence.daysOfWeek || [],
-            until: existing.recurrence.until ? new Date(existing.recurrence.until) : null,
-            count: null,
-          },
-          exceptionDates: [],
-          remindersSent: [],
-        }
-
-        const createdFollowing = await EventModel.create(rawEventData)
-        return mapEventResponse(createdFollowing as unknown as RawEventDoc)
-      }
-
-      if (mode === 'all_this_weekday') {
-        const targetDow = targetDate.getDay()
-        const existingDays =
-          Array.isArray(existing.recurrence.daysOfWeek) && existing.recurrence.daysOfWeek.length > 0
-            ? existing.recurrence.daysOfWeek
-            : existing.recurrence.frequency === 'weekdays'
-              ? [1, 2, 3, 4, 5]
-              : []
-
-        if (existingDays.includes(targetDow)) {
-          const remainingDays = existingDays.filter((d: number) => d !== targetDow)
-          if (remainingDays.length > 0) {
-            await EventModel.updateOne(
-              { _id: eventId },
-              { $set: { 'recurrence.frequency': 'custom', 'recurrence.daysOfWeek': remainingDays } },
-            )
-          } else {
-            await EventModel.deleteOne({ _id: eventId })
-          }
-
-          const newStart = data.startDate ? new Date(data.startDate) : targetDate
-          const newDow = newStart.getDay()
-          const newEnd = data.endDate
-            ? new Date(data.endDate)
-            : new Date(newStart.getTime() + (new Date(existing.endDate).getTime() - new Date(existing.startDate).getTime()))
-
-          const rawEventData = {
-            userId: existing.userId,
-            calendarId: data.calendarId !== undefined ? data.calendarId : existing.calendarId,
-            entryType: data.entryType || existing.entryType,
-            title: data.title || existing.title,
-            description: data.description !== undefined ? data.description : (existing.description ?? ''),
-            priority: data.priority || existing.priority,
-            startDate: newStart,
-            endDate: newEnd,
-            deadline: data.deadline !== undefined ? (data.deadline ? new Date(data.deadline) : null) : (existing.deadline ? new Date(existing.deadline) : null),
-            isAllDay: data.isAllDay !== undefined ? data.isAllDay : existing.isAllDay,
-            location: data.location !== undefined ? data.location : (existing.location ?? ''),
-            onlineMeetingUrl: data.onlineMeetingUrl !== undefined ? data.onlineMeetingUrl : (existing.onlineMeetingUrl ?? ''),
-            submissionUrl: data.submissionUrl !== undefined ? data.submissionUrl : (existing.submissionUrl ?? ''),
-            color: data.color ?? existing.color,
-            availability: data.availability || existing.availability,
-            visibility: data.visibility || existing.visibility,
-            timeZone: data.timeZone || existing.timeZone,
-            guests: data.guests || existing.guests,
-            checklist: data.checklist || existing.checklist,
-            reminders: data.reminders || existing.reminders,
-            recurrence: {
-              frequency: 'custom' as const,
-              interval: existing.recurrence.interval || 1,
-              daysOfWeek: [newDow],
-              until: existing.recurrence.until ? new Date(existing.recurrence.until) : null,
-              count: null,
-            },
-            exceptionDates: [],
-            remindersSent: [],
-          }
-
-          const createdWeekdaySeries = await EventModel.create(rawEventData)
-          return mapEventResponse(createdWeekdaySeries as unknown as RawEventDoc)
-        }
-      }
-    }
-
-    if (existing.recurrence && existing.recurrence.frequency !== 'none' && data.startDate && data.endDate) {
-      const origBaseStart = new Date(existing.startDate)
-      const newStart = new Date(data.startDate)
-      const duration = new Date(data.endDate).getTime() - newStart.getTime()
-      const updatedBaseStart = new Date(origBaseStart)
-      if (targetDateStr) {
-        const dayDiff = Math.round((newStart.getTime() - new Date(targetDateStr).getTime()) / (24 * 3600 * 1000))
-        if (dayDiff !== 0) {
-          updatedBaseStart.setDate(updatedBaseStart.getDate() + dayDiff)
-        }
-      }
-      updatedBaseStart.setHours(newStart.getHours(), newStart.getMinutes(), newStart.getSeconds(), 0)
-      const updatedBaseEnd = new Date(updatedBaseStart.getTime() + duration)
-      data.startDate = updatedBaseStart.toISOString()
-      data.endDate = updatedBaseEnd.toISOString()
-    }
-
-    const mode = data.mode
-    const targetDateStr = data.targetDate
-    delete data.mode
-    delete data.targetDate
-
-    if (existing.recurrence && existing.recurrence.frequency !== 'none' && mode && mode !== 'all' && targetDateStr) {
-      const targetDate = new Date(targetDateStr)
       const baseStart = new Date(existing.startDate)
       const origDuration = Math.max(0, new Date(existing.endDate).getTime() - baseStart.getTime())
       const eventZone = data.timeZone || existing.timeZone || 'Asia/Ho_Chi_Minh'
       const targetDateKey = toDateKey(targetDate, eventZone)
       const baseStartKey = toDateKey(baseStart, eventZone)
+      const resolvedCalendarId =
+        data.calendarId !== undefined
+          ? resolveCategoryObjectId(data.calendarId)
+          : resolveCategoryObjectId(existing.calendarId)
+      const resolvedDeadline =
+        data.deadline !== undefined
+          ? data.deadline
+            ? new Date(data.deadline)
+            : null
+          : existing.deadline
+            ? new Date(existing.deadline)
+            : null
 
       if (mode === 'this') {
         await EventModel.updateOne(
@@ -725,16 +556,14 @@ export const calendarService = {
 
         const rawEventData = {
           userId: new Types.ObjectId(rawOwnerId),
-          calendarId:
-            data.calendarId !== undefined
-              ? resolveCategoryObjectId(data.calendarId)
-              : resolveCategoryObjectId(existing.calendarId),
+          calendarId: resolvedCalendarId,
           entryType: data.entryType || existing.entryType,
           title: data.title || existing.title,
           description: data.description !== undefined ? data.description : (existing.description ?? ''),
           priority: data.priority || existing.priority,
           startDate: data.startDate ? new Date(data.startDate) : targetDate,
           endDate: data.endDate ? new Date(data.endDate) : new Date(targetDate.getTime() + origDuration),
+          deadline: resolvedDeadline,
           isAllDay: data.isAllDay !== undefined ? data.isAllDay : existing.isAllDay,
           location: data.location !== undefined ? data.location : (existing.location ?? ''),
           onlineMeetingUrl:
@@ -787,16 +616,14 @@ export const calendarService = {
 
         const rawEventData = {
           userId: new Types.ObjectId(rawOwnerId),
-          calendarId:
-            data.calendarId !== undefined
-              ? resolveCategoryObjectId(data.calendarId)
-              : resolveCategoryObjectId(existing.calendarId),
+          calendarId: resolvedCalendarId,
           entryType: data.entryType || existing.entryType,
           title: data.title || existing.title,
           description: data.description !== undefined ? data.description : (existing.description ?? ''),
           priority: data.priority || existing.priority,
           startDate: newStart,
           endDate: newEnd,
+          deadline: resolvedDeadline,
           isAllDay: data.isAllDay !== undefined ? data.isAllDay : existing.isAllDay,
           location: data.location !== undefined ? data.location : (existing.location ?? ''),
           onlineMeetingUrl:
@@ -849,6 +676,73 @@ export const calendarService = {
         )
         return mapEventResponse((populated ?? createdFollowing) as unknown as RawEventDoc)
       }
+
+      if (mode === 'all_this_weekday') {
+        const targetDow = targetDate.getDay()
+        const existingDays =
+          Array.isArray(existing.recurrence.daysOfWeek) && existing.recurrence.daysOfWeek.length > 0
+            ? existing.recurrence.daysOfWeek
+            : existing.recurrence.frequency === 'weekdays'
+              ? [1, 2, 3, 4, 5]
+              : []
+
+        if (existingDays.includes(targetDow)) {
+          const remainingDays = existingDays.filter((d: number) => d !== targetDow)
+          if (remainingDays.length > 0) {
+            await EventModel.updateOne(
+              { _id: eventId },
+              { $set: { 'recurrence.frequency': 'custom', 'recurrence.daysOfWeek': remainingDays } },
+            )
+          } else {
+            await EventModel.deleteOne({ _id: eventId })
+          }
+
+          const newStart = data.startDate ? new Date(data.startDate) : targetDate
+          const newDow = newStart.getDay()
+          const newEnd = data.endDate ? new Date(data.endDate) : new Date(newStart.getTime() + origDuration)
+
+          const rawEventData = {
+            userId: new Types.ObjectId(rawOwnerId),
+            calendarId: resolvedCalendarId,
+            entryType: data.entryType || existing.entryType,
+            title: data.title || existing.title,
+            description: data.description !== undefined ? data.description : (existing.description ?? ''),
+            priority: data.priority || existing.priority,
+            startDate: newStart,
+            endDate: newEnd,
+            deadline: resolvedDeadline,
+            isAllDay: data.isAllDay !== undefined ? data.isAllDay : existing.isAllDay,
+            location: data.location !== undefined ? data.location : (existing.location ?? ''),
+            onlineMeetingUrl:
+              data.onlineMeetingUrl !== undefined ? data.onlineMeetingUrl : (existing.onlineMeetingUrl ?? ''),
+            submissionUrl: data.submissionUrl !== undefined ? data.submissionUrl : (existing.submissionUrl ?? ''),
+            color: data.color ?? existing.color,
+            availability: data.availability || existing.availability,
+            visibility: data.visibility || existing.visibility,
+            timeZone: data.timeZone ?? existing.timeZone,
+            guests: data.guests || existing.guests,
+            checklist: data.checklist || existing.checklist,
+            reminders: data.reminders || existing.reminders,
+            recurrence: {
+              frequency: 'custom' as const,
+              interval: existing.recurrence.interval || 1,
+              daysOfWeek: [newDow],
+              until: existing.recurrence.until ? new Date(existing.recurrence.until) : null,
+              count: null,
+            },
+            exceptionDates: [],
+            remindersSent: [],
+          }
+
+          const createdWeekdaySeries = await EventModel.create(rawEventData)
+          const populated = await calendarRepository.findEventById(
+            rawOwnerId,
+            String(createdWeekdaySeries._id),
+            user?.email,
+          )
+          return mapEventResponse((populated ?? createdWeekdaySeries) as unknown as RawEventDoc)
+        }
+      }
     }
 
     if (existing.recurrence && existing.recurrence.frequency !== 'none' && data.startDate && data.endDate) {
@@ -857,6 +751,12 @@ export const calendarService = {
       const duration = Math.max(0, new Date(data.endDate).getTime() - newStart.getTime())
 
       const updatedBaseStart = new Date(origBaseStart)
+      if (targetDateStr) {
+        const dayDiff = Math.round((newStart.getTime() - new Date(targetDateStr).getTime()) / (24 * 3600 * 1000))
+        if (dayDiff !== 0) {
+          updatedBaseStart.setDate(updatedBaseStart.getDate() + dayDiff)
+        }
+      }
       updatedBaseStart.setHours(
         newStart.getHours(),
         newStart.getMinutes(),
