@@ -180,6 +180,22 @@ export interface EventQueryFilters {
 
 export interface CalendarPreferences {
   showLunarCalendar: boolean
+  showVietnameseHolidays: boolean
+  showPublicHolidays: boolean
+  showObservanceHolidays: boolean
+}
+
+export type HolidayCategory = 'public_holiday' | 'observance'
+export type HolidayCalendarType = 'solar' | 'lunar' | 'compensatory'
+
+export interface VietnameseHolidayItem {
+  id: string
+  solarDate: string
+  name: string
+  category: HolidayCategory
+  calendarType: HolidayCalendarType
+  isDayOff: boolean
+  lunarDateLabel?: string
 }
 
 export interface VietnameseLunarDate {

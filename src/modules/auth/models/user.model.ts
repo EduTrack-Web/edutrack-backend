@@ -25,6 +25,9 @@ const userSchema = new Schema(
     preferences: {
       calendar: {
         showLunarCalendar: { type: Boolean, default: false, required: true },
+        showVietnameseHolidays: { type: Boolean, default: true, required: true },
+        showPublicHolidays: { type: Boolean, default: true, required: true },
+        showObservanceHolidays: { type: Boolean, default: true, required: true },
       },
     },
   },

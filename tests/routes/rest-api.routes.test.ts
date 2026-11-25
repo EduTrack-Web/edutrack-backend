@@ -43,6 +43,7 @@ test('registers protected RESTful resources instead of returning not found', asy
       '/api/v1/calendar/events',
       '/api/v1/calendar/preferences',
       '/api/v1/calendar/lunar-dates?from=2026-01-01&to=2026-01-31',
+      '/api/v1/calendar/holidays?from=2026-01-01&to=2026-01-31',
       '/api/v1/notifications',
     ]
 

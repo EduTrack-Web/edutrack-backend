@@ -3,6 +3,7 @@ import { CalendarCategoryModel } from '../models/calendar-category.model.js'
 import { EventModel } from '../models/event.model.js'
 import { UserModel } from '@/modules/auth/models/user.model.js'
 import type {
+  CalendarPreferences,
   CreateCategoryInput,
   CreateEventInput,
   EventQueryFilters,
@@ -16,12 +17,20 @@ export const calendarRepository = {
   findCalendarPreferences: (userId: string) =>
     UserModel.findById(userId).select('preferences.calendar').lean(),
 
-  updateCalendarPreferences: (userId: string, showLunarCalendar: boolean) =>
-    UserModel.findByIdAndUpdate(
+  updateCalendarPreferences: (userId: string, preferences: Partial<CalendarPreferences>) => {
+    const updateFields: Record<string, boolean> = {}
+    for (const [key, value] of Object.entries(preferences)) {
+      if (typeof value === 'boolean') {
+        updateFields[`preferences.calendar.${key}`] = value
+      }
+    }
+
+    return UserModel.findByIdAndUpdate(
       userId,
-      { $set: { 'preferences.calendar.showLunarCalendar': showLunarCalendar } },
+      { $set: updateFields },
       { returnDocument: 'after', runValidators: true },
-    ).select('preferences.calendar').lean(),
+    ).select('preferences.calendar').lean()
+  },
 
   findCategoriesByUserId: async (userId: string) => {
     const legacyNames = [
