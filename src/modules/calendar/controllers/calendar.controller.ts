@@ -2,6 +2,7 @@ import type { RequestHandler } from 'express'
 import type { AuthenticatedRequestLocals } from '@/shared/middleware/authenticate.js'
 import { calendarService } from '@/modules/calendar/services/calendar.service.js'
 import { lunarCalendarService } from '@/modules/calendar/services/lunar-calendar.service.js'
+import { vietnameseHolidaysService } from '@/modules/calendar/services/vietnamese-holidays.service.js'
 import type { EventQueryFilters } from '@/modules/calendar/types/calendar.types.js'
 
 const userIdFrom = (locals: Record<string, unknown>): string =>
@@ -33,6 +34,14 @@ export const getVietnameseLunarDates: RequestHandler = async (request, response)
       timeZone: 'Asia/Ho_Chi_Minh',
       timeZoneOffset: 7,
     },
+  })
+}
+
+export const getVietnameseHolidays: RequestHandler = async (request, response) => {
+  const holidays = await vietnameseHolidaysService.getHolidays(request.query.from, request.query.to)
+  response.json({
+    success: true,
+    data: { holidays },
   })
 }
 

@@ -21,6 +21,7 @@ import {
   respondEventInvitation,
   leaveEvent,
   getCalendarPreferences,
+  getVietnameseHolidays,
   getVietnameseLunarDates,
   updateCalendarPreferences,
 } from '@/modules/calendar/controllers/calendar.controller.js'
@@ -44,6 +45,7 @@ calendarRouter.use(authenticate)
 calendarRouter.get('/preferences', getCalendarPreferences)
 calendarRouter.put('/preferences', requireCsrf, updateCalendarPreferences)
 calendarRouter.get('/lunar-dates', lunarCalendarLimiter, getVietnameseLunarDates)
+calendarRouter.get('/holidays', lunarCalendarLimiter, getVietnameseHolidays)
 calendarRouter.get('/categories', getCategories)
 calendarRouter.post('/categories', requireCsrf, createCategory)
 calendarRouter.put('/category-visibility', requireCsrf, setAllCategoriesVisibility)

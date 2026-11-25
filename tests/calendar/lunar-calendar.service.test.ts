@@ -195,8 +195,24 @@ test('records Southern Vietnam alternate lunar date during 1968 Tet divergence',
 })
 
 test('validates the preferences allowlist and rejects mass-assignment shapes', () => {
-  assert.equal(validateCalendarPreferencesInput({ showLunarCalendar: true }), true)
-  assert.equal(validateCalendarPreferencesInput({ showLunarCalendar: false }), false)
+  assert.deepEqual(validateCalendarPreferencesInput({ showLunarCalendar: true }), { showLunarCalendar: true })
+  assert.deepEqual(validateCalendarPreferencesInput({ showLunarCalendar: false }), { showLunarCalendar: false })
+  assert.deepEqual(
+    validateCalendarPreferencesInput({
+      showVietnameseHolidays: false,
+      showPublicHolidays: true,
+      showObservanceHolidays: false,
+    }),
+    {
+      showVietnameseHolidays: false,
+      showPublicHolidays: true,
+      showObservanceHolidays: false,
+    },
+  )
+  assert.throws(
+    () => validateCalendarPreferencesInput({}),
+    (error: unknown) => error instanceof AppError && error.code === 'INVALID_CALENDAR_PREFERENCES',
+  )
   assert.throws(
     () => validateCalendarPreferencesInput({ showLunarCalendar: true, role: 'admin' }),
     (error: unknown) => error instanceof AppError && error.code === 'INVALID_CALENDAR_PREFERENCES',

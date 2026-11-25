@@ -1,9 +1,7 @@
 import { AppError } from '@/shared/errors/app-error.js'
-import type { DateOnlyParts } from '@/modules/calendar/types/calendar.types.js'
+import type { CalendarPreferences, DateOnlyParts } from '@/modules/calendar/types/calendar.types.js'
 
 export const MAX_LUNAR_DATE_RANGE_DAYS = 400
-// Khoảng năm đã được kiểm thử với dữ liệu đối chiếu. Frontend giữ cùng giá trị
-// trong lunarCalendar.ts; khi đổi phải cập nhật cả hai phía.
 export const LUNAR_SUPPORTED_MIN_YEAR = 1900
 export const LUNAR_SUPPORTED_MAX_YEAR = 2199
 const ISO_DATE_ONLY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/
@@ -71,7 +69,7 @@ export const dateOnlyFromOrdinal = (ordinal: number): DateOnlyParts => {
 export const formatIsoDateOnly = ({ year, month, day }: DateOnlyParts): string =>
   [year.toString().padStart(4, '0'), month.toString().padStart(2, '0'), day.toString().padStart(2, '0')].join('-')
 
-export const validateLunarDateRange = (
+export const validateDateRangeWindow = (
   fromValue: unknown,
   toValue: unknown,
 ): { from: DateOnlyParts; to: DateOnlyParts; startOrdinal: number; endOrdinal: number } => {
@@ -86,15 +84,6 @@ export const validateLunarDateRange = (
     })
   }
 
-  if (from.year < LUNAR_SUPPORTED_MIN_YEAR || to.year > LUNAR_SUPPORTED_MAX_YEAR) {
-    throw new AppError(
-      422,
-      'LUNAR_DATE_OUT_OF_RANGE',
-      'Thời gian lịch quá xa so với hiện tại nên chưa thể hiển thị lịch Âm.',
-      { from: `Chỉ hỗ trợ lịch Âm từ năm ${LUNAR_SUPPORTED_MIN_YEAR} đến năm ${LUNAR_SUPPORTED_MAX_YEAR}.` },
-    )
-  }
-
   if (endOrdinal - startOrdinal + 1 > MAX_LUNAR_DATE_RANGE_DAYS) {
     throw new AppError(
       422,
@@ -107,20 +96,50 @@ export const validateLunarDateRange = (
   return { from, to, startOrdinal, endOrdinal }
 }
 
-export const validateCalendarPreferencesInput = (value: unknown): boolean => {
-  const keys = typeof value === 'object' && value !== null ? Object.keys(value) : []
-  if (
-    typeof value !== 'object'
-    || value === null
-    || keys.length !== 1
-    || keys[0] !== 'showLunarCalendar'
-    || !('showLunarCalendar' in value)
-    || typeof (value as Record<string, unknown>).showLunarCalendar !== 'boolean'
-  ) {
-    throw new AppError(422, 'INVALID_CALENDAR_PREFERENCES', 'Cài đặt lịch không hợp lệ.', {
-      showLunarCalendar: 'Giá trị hiển thị lịch Âm phải là true hoặc false.',
-    })
+export const validateLunarDateRange = (
+  fromValue: unknown,
+  toValue: unknown,
+): { from: DateOnlyParts; to: DateOnlyParts; startOrdinal: number; endOrdinal: number } => {
+  const range = validateDateRangeWindow(fromValue, toValue)
+
+  if (range.from.year < LUNAR_SUPPORTED_MIN_YEAR || range.to.year > LUNAR_SUPPORTED_MAX_YEAR) {
+    throw new AppError(
+      422,
+      'LUNAR_DATE_OUT_OF_RANGE',
+      'Thời gian lịch quá xa so với hiện tại nên chưa thể hiển thị lịch Âm.',
+      { from: `Chỉ hỗ trợ lịch Âm từ năm ${LUNAR_SUPPORTED_MIN_YEAR} đến năm ${LUNAR_SUPPORTED_MAX_YEAR}.` },
+    )
   }
 
-  return (value as { showLunarCalendar: boolean }).showLunarCalendar
+  return range
+}
+
+const ALLOWED_CALENDAR_PREFERENCE_KEYS: ReadonlySet<keyof CalendarPreferences> = new Set([
+  'showLunarCalendar',
+  'showVietnameseHolidays',
+  'showPublicHolidays',
+  'showObservanceHolidays',
+])
+
+export const validateCalendarPreferencesInput = (value: unknown): Partial<CalendarPreferences> => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new AppError(422, 'INVALID_CALENDAR_PREFERENCES', 'Cài đặt lịch không hợp lệ.')
+  }
+
+  const entries = Object.entries(value as Record<string, unknown>)
+  if (entries.length === 0) {
+    throw new AppError(422, 'INVALID_CALENDAR_PREFERENCES', 'Cần cung cấp ít nhất một tùy chọn cài đặt lịch.')
+  }
+
+  const sanitized: Partial<CalendarPreferences> = {}
+  for (const [key, rawVal] of entries) {
+    if (!ALLOWED_CALENDAR_PREFERENCE_KEYS.has(key as keyof CalendarPreferences) || typeof rawVal !== 'boolean') {
+      throw new AppError(422, 'INVALID_CALENDAR_PREFERENCES', 'Cài đặt lịch không hợp lệ.', {
+        [key]: 'Giá trị tùy chọn phải là true hoặc false.',
+      })
+    }
+    sanitized[key as keyof CalendarPreferences] = rawVal
+  }
+
+  return sanitized
 }
