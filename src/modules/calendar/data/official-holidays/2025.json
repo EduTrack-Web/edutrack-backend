@@ -1,0 +1,18 @@
+{
+  "year": 2025,
+  "status": "confirmed",
+  "source": {
+    "name": "Thông báo lịch nghỉ lễ, Tết năm 2025 - Văn phòng Chính phủ / Bộ LĐTBXH",
+    "verifiedBy": "EduTrack Team",
+    "verifiedAt": "2026-11-26T00:00:00.000Z"
+  },
+  "holidays": [
+    { "key": "tet_28", "solarDate": "2025-01-27", "name": "Tết Nguyên Đán (28 Tết)", "calendarType": "lunar", "isDayOff": true, "lunarDateLabel": "28/12 Âm lịch" },
+    { "key": "tet_29", "solarDate": "2025-01-28", "name": "Tết Nguyên Đán (29 Tết)", "calendarType": "lunar", "isDayOff": true, "lunarDateLabel": "29/12 Âm lịch" },
+    { "key": "tet_1", "solarDate": "2025-01-29", "name": "Mùng 1 Tết Nguyên Đán", "calendarType": "lunar", "isDayOff": true, "lunarDateLabel": "1/1 Âm lịch" },
+    { "key": "tet_2", "solarDate": "2025-01-30", "name": "Mùng 2 Tết Nguyên Đán", "calendarType": "lunar", "isDayOff": true, "lunarDateLabel": "2/1 Âm lịch" },
+    { "key": "tet_3", "solarDate": "2025-01-31", "name": "Mùng 3 Tết Nguyên Đán", "calendarType": "lunar", "isDayOff": true, "lunarDateLabel": "3/1 Âm lịch" },
+    { "key": "labor_swap", "solarDate": "2025-05-02", "name": "Dịp 30/4 - 1/5 (Ngày hoán đổi)", "calendarType": "compensatory", "isDayOff": true },
+    { "key": "national_day_adj", "solarDate": "2025-09-01", "name": "Ngày Quốc khánh (Nghỉ liền kề)", "calendarType": "solar", "isDayOff": true }
+  ]
+}

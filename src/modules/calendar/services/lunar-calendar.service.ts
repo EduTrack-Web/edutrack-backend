@@ -30,18 +30,29 @@ const readCalendarPreferences = (value: unknown): CalendarPreferences => {
   }
 }
 
+export interface CalendarPreferencesRepository {
+  findCalendarPreferences: (userId: string) => Promise<unknown>
+  updateCalendarPreferences: (
+    userId: string,
+    preferences: Partial<CalendarPreferences>,
+  ) => Promise<unknown>
+}
+
 export class LunarCalendarService {
-  public constructor(private readonly provider: LunarDateProvider = vietnameseLunarAdapter) {}
+  public constructor(
+    private readonly provider: LunarDateProvider = vietnameseLunarAdapter,
+    private readonly repository: CalendarPreferencesRepository = calendarRepository,
+  ) {}
 
   public async getPreferences(userId: string): Promise<CalendarPreferences> {
-    const user = await calendarRepository.findCalendarPreferences(userId)
+    const user = await this.repository.findCalendarPreferences(userId)
     if (!user) throw new AppError(404, 'USER_NOT_FOUND', 'Không tìm thấy tài khoản.')
     return readCalendarPreferences(user)
   }
 
   public async updatePreferences(userId: string, input: unknown): Promise<CalendarPreferences> {
     const validated = validateCalendarPreferencesInput(input)
-    const user = await calendarRepository.updateCalendarPreferences(userId, validated)
+    const user = await this.repository.updateCalendarPreferences(userId, validated)
     if (!user) throw new AppError(404, 'USER_NOT_FOUND', 'Không tìm thấy tài khoản.')
     return readCalendarPreferences(user)
   }
