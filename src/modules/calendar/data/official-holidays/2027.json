@@ -1,0 +1,20 @@
+{
+  "year": 2027,
+  "status": "confirmed",
+  "source": {
+    "name": "Thông báo lịch nghỉ lễ, Tết năm 2027 - Văn phòng Chính phủ / Bộ Nội vụ",
+    "verifiedBy": "EduTrack Team",
+    "verifiedAt": "2026-11-26T00:00:00.000Z"
+  },
+  "holidays": [
+    { "key": "tet_28", "solarDate": "2027-02-04", "name": "Tết Nguyên Đán (28 Tết)", "calendarType": "lunar", "isDayOff": true, "lunarDateLabel": "28/12 Âm lịch" },
+    { "key": "tet_29", "solarDate": "2027-02-05", "name": "Tết Nguyên Đán (29 Tết)", "calendarType": "lunar", "isDayOff": true, "lunarDateLabel": "29/12 Âm lịch" },
+    { "key": "tet_1", "solarDate": "2027-02-06", "name": "Mùng 1 Tết Nguyên Đán", "calendarType": "lunar", "isDayOff": true, "lunarDateLabel": "1/1 Âm lịch" },
+    { "key": "tet_2", "solarDate": "2027-02-07", "name": "Mùng 2 Tết Nguyên Đán", "calendarType": "lunar", "isDayOff": true, "lunarDateLabel": "2/1 Âm lịch" },
+    { "key": "tet_3", "solarDate": "2027-02-08", "name": "Mùng 3 Tết Nguyên Đán", "calendarType": "lunar", "isDayOff": true, "lunarDateLabel": "3/1 Âm lịch" },
+    { "key": "tet_comp_1", "solarDate": "2027-02-09", "name": "Tết Nguyên Đán (Nghỉ bù)", "calendarType": "compensatory", "isDayOff": true, "lunarDateLabel": "4/1 Âm lịch" },
+    { "key": "tet_comp_2", "solarDate": "2027-02-10", "name": "Tết Nguyên Đán (Nghỉ bù)", "calendarType": "compensatory", "isDayOff": true, "lunarDateLabel": "5/1 Âm lịch" },
+    { "key": "labor_comp", "solarDate": "2027-05-03", "name": "Ngày Quốc tế Lao động (Nghỉ bù)", "calendarType": "compensatory", "isDayOff": true },
+    { "key": "national_day_adj", "solarDate": "2027-09-03", "name": "Ngày Quốc khánh (Nghỉ liền kề)", "calendarType": "solar", "isDayOff": true }
+  ]
+}

@@ -1,0 +1,128 @@
+name: Check Vietnamese Holiday Updates
+
+on:
+  schedule:
+    - cron: '0 2 * * 1'
+  workflow_dispatch:
+    inputs:
+      targetYear:
+        description: 'Năm cần kiểm tra (mặc định: năm hiện tại và năm kế tiếp)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  check-holidays:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate existing official holiday files
+        run: npm run holidays:validate
+
+      - name: Check upstream holiday source and generate draft proposal if changed
+        id: check
+        env:
+          TARGET_YEAR: ${{ github.event.inputs.targetYear }}
+        run: |
+          node - <<'EOF'
+          const fs = require('node:fs')
+          const path = require('node:path')
+
+          const dataDir = path.resolve('src/modules/calendar/data/official-holidays')
+          const currentYear = new Date().getUTCFullYear()
+          const years = process.env.TARGET_YEAR
+            ? [Number(process.env.TARGET_YEAR)]
+            : [currentYear, currentYear + 1]
+
+          async function run() {
+            let changed = false
+            for (const year of years) {
+              if (!Number.isInteger(year) || year < 2004 || year > 2199) continue
+              const existingFile = path.join(dataDir, `${year}.json`)
+              if (fs.existsSync(existingFile)) {
+                const existing = JSON.parse(fs.readFileSync(existingFile, 'utf8'))
+                if (existing.status === 'confirmed') {
+                  console.log(`Year ${year} already confirmed locally; skipping draft generation.`)
+                  continue
+                }
+              }
+
+              const url = `https://cdn.jsdelivr.net/npm/vietnamese-days/dist/years/${year}.json`
+              const res = await fetch(url, { signal: AbortSignal.timeout(5000) })
+              if (!res.ok) {
+                console.log(`No upstream data for ${year} (HTTP ${res.status}).`)
+                continue
+              }
+
+              const payload = await res.json()
+              const rawList = Array.isArray(payload) ? payload : Array.isArray(payload.holidays) ? payload.holidays : []
+              const holidays = rawList
+                .filter((item) => item && typeof item.date === 'string' && typeof item.name === 'string' && item.isOff !== false)
+                .map((item, idx) => ({
+                  key: `upstream_${idx + 1}`,
+                  solarDate: item.date.slice(0, 10),
+                  name: item.name.trim(),
+                  calendarType: 'solar',
+                  isDayOff: true,
+                }))
+
+              if (holidays.length === 0) continue
+
+              const draftRecord = {
+                year,
+                status: 'draft',
+                source: {
+                  name: `vietnamese-days (${url}) - cần đối chiếu văn bản Chính phủ trước khi chuyển confirmed`,
+                  referenceUrl: url,
+                },
+                holidays,
+              }
+
+              fs.writeFileSync(existingFile, `${JSON.stringify(draftRecord, null, 2)}\n`, 'utf8')
+              console.log(`Generated draft holiday proposal for ${year}.`)
+              changed = true
+            }
+
+            if (process.env.GITHUB_OUTPUT) {
+              fs.appendFileSync(process.env.GITHUB_OUTPUT, `changed=${changed}\n`)
+            }
+          }
+
+          run().catch((err) => {
+            console.error(err)
+            process.exit(1)
+          })
+          EOF
+
+      - name: Re-validate JSON files after draft generation
+        if: steps.check.outputs.changed == 'true'
+        run: npm run holidays:validate
+
+      - name: Create Pull Request for human review
+        if: steps.check.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: 'chore(calendar): propose draft official holidays for review'
+          branch: chore/holiday-draft-proposal
+          base: develop
+          title: '[Draft] Đề xuất cập nhật lịch nghỉ lễ Việt Nam (cần đối chiếu & duyệt)'
+          body: |
+            Workflow tự động phát hiện dữ liệu ngày nghỉ lễ tham khảo mới từ nguồn ngoài.
+
+            **Lưu ý kiểm duyệt:**
+            - Bản ghi sinh ra mặc định mang `status: "draft"` và **không** được hiển thị lên production.
+            - Người duyệt cần đối chiếu với thông báo chính thức của Chính phủ, chuẩn hóa `key`/`name`/`calendarType`, điền `source.verifiedBy` và đổi `status` thành `"confirmed"` trước khi merge vào `develop` và chạy `npm run holidays:sync`.

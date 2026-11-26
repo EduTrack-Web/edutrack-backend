@@ -1,0 +1,20 @@
+{
+  "year": 2026,
+  "status": "confirmed",
+  "source": {
+    "name": "Thông báo lịch nghỉ lễ, Tết năm 2026 - Văn phòng Chính phủ / Bộ Nội vụ",
+    "verifiedBy": "EduTrack Team",
+    "verifiedAt": "2026-11-26T00:00:00.000Z"
+  },
+  "holidays": [
+    { "key": "new_year_swap", "solarDate": "2026-01-02", "name": "Tết Dương lịch (Ngày hoán đổi)", "calendarType": "compensatory", "isDayOff": true },
+    { "key": "tet_29", "solarDate": "2026-02-16", "name": "Tết Nguyên Đán (29 Tết)", "calendarType": "lunar", "isDayOff": true, "lunarDateLabel": "29/12 Âm lịch" },
+    { "key": "tet_1", "solarDate": "2026-02-17", "name": "Mùng 1 Tết Nguyên Đán", "calendarType": "lunar", "isDayOff": true, "lunarDateLabel": "1/1 Âm lịch" },
+    { "key": "tet_2", "solarDate": "2026-02-18", "name": "Mùng 2 Tết Nguyên Đán", "calendarType": "lunar", "isDayOff": true, "lunarDateLabel": "2/1 Âm lịch" },
+    { "key": "tet_3", "solarDate": "2026-02-19", "name": "Mùng 3 Tết Nguyên Đán", "calendarType": "lunar", "isDayOff": true, "lunarDateLabel": "3/1 Âm lịch" },
+    { "key": "tet_4", "solarDate": "2026-02-20", "name": "Tết Nguyên Đán (Mùng 4)", "calendarType": "lunar", "isDayOff": true, "lunarDateLabel": "4/1 Âm lịch" },
+    { "key": "hung_kings_comp", "solarDate": "2026-04-27", "name": "Giỗ Tổ Hùng Vương (Nghỉ bù)", "calendarType": "compensatory", "isDayOff": true },
+    { "key": "national_day_swap", "solarDate": "2026-08-31", "name": "Ngày Quốc khánh (Ngày hoán đổi)", "calendarType": "compensatory", "isDayOff": true },
+    { "key": "national_day_adj", "solarDate": "2026-09-01", "name": "Ngày Quốc khánh (Nghỉ liền kề)", "calendarType": "solar", "isDayOff": true }
+  ]
+}
