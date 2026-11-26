@@ -252,6 +252,7 @@ export interface VietnameseLunarDate {
   lunarMonth: number
   lunarYear: number
   isLeapMonth: boolean
+  timeZoneOffset?: 7 | 8
   alternateLunar?: {
     label: string
     lunarDay: number

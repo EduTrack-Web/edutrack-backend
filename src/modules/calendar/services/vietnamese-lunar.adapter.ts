@@ -27,7 +27,7 @@ const isValidConversion = (
  */
 const resolveVietnamHistoricalOffsets = (
   isoDate: string,
-): { primaryOffset: number; southOffset?: number } => {
+): { primaryOffset: 7 | 8; southOffset?: 7 | 8 } => {
   if (isoDate >= '1976-01-01') return { primaryOffset: 7 }
   if (isoDate >= '1967-08-08') return { primaryOffset: 7, southOffset: 8 }
   if (isoDate >= '1955-07-01' && isoDate <= '1959-12-31') return { primaryOffset: 8, southOffset: 7 }
@@ -50,6 +50,7 @@ export const vietnameseLunarAdapter: LunarDateProvider = {
         lunarMonth: lunarDate.month,
         lunarYear: lunarDate.year,
         isLeapMonth: lunarDate.isLeapMonth,
+        timeZoneOffset: primaryOffset,
       }
 
       if (southOffset !== undefined) {
