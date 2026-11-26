@@ -25,6 +25,8 @@
     "test": "tsx --test tests/**/*.test.ts",
     "cleanup:notes": "tsx src/jobs/purge-expired-notes.ts",
     "migrate:google-avatars": "tsx src/jobs/migrate-google-avatars.ts",
+    "holidays:validate": "tsx src/jobs/sync-official-holidays.ts --validate-only",
+    "holidays:sync": "tsx src/jobs/sync-official-holidays.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc && tsc-alias",
     "start": "node dist/server.js"
