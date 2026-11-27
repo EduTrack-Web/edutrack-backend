@@ -178,6 +178,31 @@ const eventSchema = new Schema(
       ],
       default: [],
     },
+    shareToken: {
+      type: String,
+      default: null,
+      index: true,
+    },
+    isShareEnabled: {
+      type: Boolean,
+      default: false,
+    },
+    joinRequests: {
+      type: [
+        new Schema(
+          {
+            userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+            email: { type: String, required: true, trim: true, lowercase: true },
+            fullName: { type: String, trim: true, default: '' },
+            message: { type: String, trim: true, maxlength: 300, default: '' },
+            status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' },
+            createdAt: { type: Date, default: Date.now },
+            respondedAt: { type: Date, default: null },
+          },
+        ),
+      ],
+      default: [],
+    },
   },
   { timestamps: true, versionKey: false },
 )

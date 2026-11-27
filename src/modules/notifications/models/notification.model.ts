@@ -5,7 +5,7 @@ const notificationSchema = new Schema(
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     type: {
       type: String,
-      enum: ['event_invitation', 'event_reminder', 'event_update', 'event_response', 'system'],
+      enum: ['event_invitation', 'event_reminder', 'event_update', 'event_response', 'calendar_shared', 'event_join_request', 'event_join_response', 'system'],
       default: 'system',
       required: true,
       index: true,
