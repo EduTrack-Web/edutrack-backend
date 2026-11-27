@@ -221,4 +221,67 @@ test('validates the preferences allowlist and rejects mass-assignment shapes', (
     () => validateCalendarPreferencesInput({ showLunarCalendar: 'true' }),
     (error: unknown) => error instanceof AppError && error.code === 'INVALID_CALENDAR_PREFERENCES',
   )
+  assert.throws(
+    () => validateCalendarPreferencesInput({ showLunarCalendar: 'yes', role: 'admin' }),
+    (error: unknown) =>
+      error instanceof AppError
+      && error.code === 'INVALID_CALENDAR_PREFERENCES'
+      && Boolean(error.fieldErrors?.showLunarCalendar)
+      && Boolean(error.fieldErrors?.role),
+  )
+})
+
+test('collects both from and to validation errors simultaneously', () => {
+  assert.throws(
+    () => validateLunarDateRange('2023-02-29', 'not-a-date'),
+    (error: unknown) =>
+      error instanceof AppError
+      && error.code === 'INVALID_LUNAR_DATE_RANGE'
+      && Boolean(error.fieldErrors?.from)
+      && Boolean(error.fieldErrors?.to),
+  )
+})
+
+test('exposes historical UTC+8 offset for pre-1967 dates and UTC+7 for modern dates', () => {
+  const historical = vietnameseLunarAdapter.convert({ year: 1960, month: 1, day: 28 })
+  const modern = vietnameseLunarAdapter.convert({ year: 2026, month: 2, day: 17 })
+  assert.equal(historical.timeZoneOffset, 8)
+  assert.equal(modern.timeZoneOffset, 7)
+})
+
+test('reads, persists, and handles missing user or DB errors in calendar preferences', async () => {
+  let savedPrefs = {
+    showLunarCalendar: false,
+    showVietnameseHolidays: true,
+    showPublicHolidays: true,
+    showObservanceHolidays: true,
+  }
+
+  const service = new LunarCalendarService(vietnameseLunarAdapter, {
+    findCalendarPreferences: async (userId) =>
+      userId === 'user-1' ? { preferences: { calendar: savedPrefs } } : null,
+    updateCalendarPreferences: async (userId, next) => {
+      if (userId === 'db-fail') throw new Error('Simulated DB write error')
+      if (userId !== 'user-1') return null
+      savedPrefs = { ...savedPrefs, ...next }
+      return { preferences: { calendar: savedPrefs } }
+    },
+  })
+
+  const initial = await service.getPreferences('user-1')
+  assert.equal(initial.showLunarCalendar, false)
+
+  const updated = await service.updatePreferences('user-1', { showLunarCalendar: true })
+  assert.equal(updated.showLunarCalendar, true)
+  assert.equal((await service.getPreferences('user-1')).showLunarCalendar, true)
+
+  await assert.rejects(
+    () => service.getPreferences('missing-user'),
+    (error: unknown) => error instanceof AppError && error.statusCode === 404 && error.code === 'USER_NOT_FOUND',
+  )
+  await assert.rejects(
+    () => service.updatePreferences('missing-user', { showLunarCalendar: true }),
+    (error: unknown) => error instanceof AppError && error.statusCode === 404 && error.code === 'USER_NOT_FOUND',
+  )
+  await assert.rejects(() => service.updatePreferences('db-fail', { showLunarCalendar: true }), /Simulated DB write error/)
 })

@@ -15,18 +15,17 @@ const daysInMonth = (year: number, month: number): number => {
   return 31
 }
 
-export const parseIsoDateOnly = (value: unknown, fieldName: 'from' | 'to'): DateOnlyParts => {
+const parseIsoDateOnlySafe = (
+  value: unknown,
+  fieldName: 'from' | 'to',
+): { parsed?: DateOnlyParts; error?: string } => {
   if (typeof value !== 'string') {
-    throw new AppError(422, 'INVALID_LUNAR_DATE_RANGE', 'Khoảng ngày không hợp lệ.', {
-      [fieldName]: `Trường ${fieldName} phải có định dạng YYYY-MM-DD.`,
-    })
+    return { error: `Trường ${fieldName} phải có định dạng YYYY-MM-DD.` }
   }
 
   const match = ISO_DATE_ONLY_PATTERN.exec(value)
   if (!match) {
-    throw new AppError(422, 'INVALID_LUNAR_DATE_RANGE', 'Khoảng ngày không hợp lệ.', {
-      [fieldName]: `Trường ${fieldName} phải có định dạng YYYY-MM-DD.`,
-    })
+    return { error: `Trường ${fieldName} phải có định dạng YYYY-MM-DD.` }
   }
 
   const year = Number(match[1])
@@ -42,12 +41,20 @@ export const parseIsoDateOnly = (value: unknown, fieldName: 'from' | 'to'): Date
     || day < 1
     || day > daysInMonth(year, month)
   ) {
-    throw new AppError(422, 'INVALID_LUNAR_DATE_RANGE', 'Khoảng ngày không hợp lệ.', {
-      [fieldName]: `Ngày ${fieldName} không tồn tại.`,
-    })
+    return { error: `Ngày ${fieldName} không tồn tại.` }
   }
 
-  return { year, month, day }
+  return { parsed: { year, month, day } }
+}
+
+export const parseIsoDateOnly = (value: unknown, fieldName: 'from' | 'to'): DateOnlyParts => {
+  const { parsed, error } = parseIsoDateOnlySafe(value, fieldName)
+  if (!parsed) {
+    throw new AppError(422, 'INVALID_LUNAR_DATE_RANGE', 'Khoảng ngày không hợp lệ.', {
+      [fieldName]: error ?? `Trường ${fieldName} không hợp lệ.`,
+    })
+  }
+  return parsed
 }
 
 export const dateOnlyToOrdinal = ({ year, month, day }: DateOnlyParts): number => {
@@ -73,8 +80,18 @@ export const validateDateRangeWindow = (
   fromValue: unknown,
   toValue: unknown,
 ): { from: DateOnlyParts; to: DateOnlyParts; startOrdinal: number; endOrdinal: number } => {
-  const from = parseIsoDateOnly(fromValue, 'from')
-  const to = parseIsoDateOnly(toValue, 'to')
+  const fromResult = parseIsoDateOnlySafe(fromValue, 'from')
+  const toResult = parseIsoDateOnlySafe(toValue, 'to')
+  const fieldErrors: Record<string, string> = {}
+
+  if (fromResult.error) fieldErrors.from = fromResult.error
+  if (toResult.error) fieldErrors.to = toResult.error
+  if (Object.keys(fieldErrors).length > 0 || !fromResult.parsed || !toResult.parsed) {
+    throw new AppError(422, 'INVALID_LUNAR_DATE_RANGE', 'Khoảng ngày không hợp lệ.', fieldErrors)
+  }
+
+  const from = fromResult.parsed
+  const to = toResult.parsed
   const startOrdinal = dateOnlyToOrdinal(from)
   const endOrdinal = dateOnlyToOrdinal(to)
 
@@ -132,13 +149,21 @@ export const validateCalendarPreferencesInput = (value: unknown): Partial<Calend
   }
 
   const sanitized: Partial<CalendarPreferences> = {}
+  const fieldErrors: Record<string, string> = {}
   for (const [key, rawVal] of entries) {
-    if (!ALLOWED_CALENDAR_PREFERENCE_KEYS.has(key as keyof CalendarPreferences) || typeof rawVal !== 'boolean') {
-      throw new AppError(422, 'INVALID_CALENDAR_PREFERENCES', 'Cài đặt lịch không hợp lệ.', {
-        [key]: 'Giá trị tùy chọn phải là true hoặc false.',
-      })
+    if (!ALLOWED_CALENDAR_PREFERENCE_KEYS.has(key as keyof CalendarPreferences)) {
+      fieldErrors[key] = 'Tùy chọn cài đặt lịch không được hỗ trợ.'
+      continue
+    }
+    if (typeof rawVal !== 'boolean') {
+      fieldErrors[key] = 'Giá trị tùy chọn phải là true hoặc false.'
+      continue
     }
     sanitized[key as keyof CalendarPreferences] = rawVal
+  }
+
+  if (Object.keys(fieldErrors).length > 0) {
+    throw new AppError(422, 'INVALID_CALENDAR_PREFERENCES', 'Cài đặt lịch không hợp lệ.', fieldErrors)
   }
 
   return sanitized

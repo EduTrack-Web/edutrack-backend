@@ -27,12 +27,14 @@ export const updateCalendarPreferences: RequestHandler = async (request, respons
 
 export const getVietnameseLunarDates: RequestHandler = async (request, response) => {
   const dates = lunarCalendarService.getDates(request.query.from, request.query.to)
+  const timeZoneOffset: 7 | 8 =
+    dates.length > 0 && dates.every((date) => date.timeZoneOffset === 8) ? 8 : 7
   response.json({
     success: true,
     data: {
       dates,
       timeZone: 'Asia/Ho_Chi_Minh',
-      timeZoneOffset: 7,
+      timeZoneOffset,
     },
   })
 }

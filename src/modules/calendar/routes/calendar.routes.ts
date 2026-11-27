@@ -56,12 +56,25 @@ const lunarCalendarLimiter = rateLimit({
 
 calendarRouter.get('/public/:publicToken', getPublicCalendar)
 calendarRouter.get('/public/:publicToken/export-file', exportPublicCalendarIcs)
+const holidaysLimiter = rateLimit({
+  windowMs: 60 * 1_000,
+  limit: 60,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  handler: (_request, response) => {
+    response.status(429).json({
+      success: false,
+      code: 'HOLIDAYS_RATE_LIMITED',
+      message: 'Bạn đang tải dữ liệu ngày lễ quá nhanh. Vui lòng thử lại sau.',
+    })
+  },
+})
 
 calendarRouter.use(authenticate)
 calendarRouter.get('/preferences', getCalendarPreferences)
 calendarRouter.put('/preferences', requireCsrf, updateCalendarPreferences)
 calendarRouter.get('/lunar-dates', lunarCalendarLimiter, getVietnameseLunarDates)
-calendarRouter.get('/holidays', lunarCalendarLimiter, getVietnameseHolidays)
+calendarRouter.get('/holidays', holidaysLimiter, getVietnameseHolidays)
 calendarRouter.get('/categories', getCategories)
 calendarRouter.post('/categories', requireCsrf, createCategory)
 calendarRouter.put('/category-visibility', requireCsrf, setAllCategoriesVisibility)

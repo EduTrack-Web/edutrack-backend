@@ -222,6 +222,15 @@ export interface CalendarPreferences {
 
 export type HolidayCategory = 'public_holiday' | 'observance'
 export type HolidayCalendarType = 'solar' | 'lunar' | 'compensatory'
+export type OfficialHolidayYearStatus = 'draft' | 'confirmed' | 'archived'
+
+export interface HolidayLunarDateInfo {
+  day: number
+  month: number
+  year: number
+  isLeapMonth: boolean
+  yearCanChi: string
+}
 
 export interface VietnameseHolidayItem {
   id: string
@@ -231,6 +240,45 @@ export interface VietnameseHolidayItem {
   calendarType: HolidayCalendarType
   isDayOff: boolean
   lunarDateLabel?: string
+  lunarDate?: HolidayLunarDateInfo
+  notes?: string
+  sourceGroup?: 'rule' | 'official'
+}
+
+export interface OfficialHolidaySource {
+  name: string
+  referenceUrl?: string
+  verifiedBy?: string
+  verifiedAt?: string
+}
+
+export interface OfficialHolidayEntry {
+  key: string
+  solarDate: string
+  name: string
+  calendarType: HolidayCalendarType
+  isDayOff: boolean
+  replacesRuleKey?: string
+  lunarDateLabel?: string
+  notes?: string
+}
+
+export interface OfficialHolidayVersionSnapshot {
+  version: number
+  status: OfficialHolidayYearStatus
+  source: OfficialHolidaySource
+  holidays: OfficialHolidayEntry[]
+  archivedAt: string
+}
+
+export interface OfficialHolidayYearRecord {
+  year: number
+  status: OfficialHolidayYearStatus
+  source: OfficialHolidaySource
+  version: number
+  holidays: OfficialHolidayEntry[]
+  previousVersions: OfficialHolidayVersionSnapshot[]
+  updatedAt: string
 }
 
 export interface VietnameseLunarDate {
@@ -239,6 +287,7 @@ export interface VietnameseLunarDate {
   lunarMonth: number
   lunarYear: number
   isLeapMonth: boolean
+  timeZoneOffset?: 7 | 8
   alternateLunar?: {
     label: string
     lunarDay: number
