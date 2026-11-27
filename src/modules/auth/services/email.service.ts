@@ -158,6 +158,47 @@ export const sendEventInvitationEmail = async (
   }
 }
 
+export const sendCategorySharedEmail = async (
+  email: string,
+  details: {
+    categoryName: string
+    sharerName: string
+    roleLabel: string
+    description?: string
+  },
+): Promise<void> => {
+  try {
+    const subject = `[EduTrack] Bạn được chia sẻ lịch: ${details.categoryName}`
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #C1E8FF; border-radius: 12px; background-color: #ffffff;">
+        <div style="text-align: center; margin-bottom: 20px;">
+          <h2 style="color: #052659; margin: 0;">EduTrack Calendar</h2>
+          <p style="color: #548383; font-size: 14px; margin-top: 4px;">Chia sẻ danh mục lịch</p>
+        </div>
+        <div style="background-color: #F8FAFC; border-left: 4px solid #2563EB; padding: 16px; border-radius: 6px; margin-bottom: 20px;">
+          <h3 style="color: #021024; margin-top: 0; font-size: 18px;">${details.categoryName}</h3>
+          <p style="color: #334155; margin: 8px 0; font-size: 14px;"><strong>Người chia sẻ:</strong> ${details.sharerName}</p>
+          <p style="color: #334155; margin: 8px 0; font-size: 14px;"><strong>Quyền được cấp:</strong> ${details.roleLabel}</p>
+          ${details.description ? `<p style="color: #334155; margin: 8px 0; font-size: 14px;"><strong>Mô tả:</strong> ${details.description}</p>` : ''}
+        </div>
+        <p style="font-size: 13px; color: #64748B; text-align: center;">
+          Đăng nhập vào EduTrack để xem lịch được chia sẻ hoặc rời khỏi lịch nếu bạn không muốn tham gia.
+        </p>
+      </div>
+    `
+
+    await emailService.sendEmail({
+      to: email,
+      subject,
+      text: `${details.sharerName} đã chia sẻ lịch "${details.categoryName}" với bạn (quyền: ${details.roleLabel}).`,
+      html,
+      tags: [{ name: 'purpose', value: 'category-shared' }],
+    })
+  } catch (error: unknown) {
+    console.warn('[EmailService] Không thể gửi email chia sẻ lịch.', error instanceof Error ? error.message : 'Unknown error')
+  }
+}
+
 export const sendEventReminderEmail = async (
   email: string,
   details: {
