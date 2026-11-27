@@ -60,6 +60,17 @@ const calendarCategorySchema = new Schema(
       type: Boolean,
       default: false,
     },
+    publicToken: {
+      type: String,
+      default: null,
+      index: true,
+    },
+    subscribers: {
+      type: [Schema.Types.ObjectId],
+      ref: 'User',
+      default: [],
+      index: true,
+    },
   },
   { timestamps: true, versionKey: false },
 )

@@ -28,6 +28,7 @@ const userSchema = new Schema(
         showVietnameseHolidays: { type: Boolean, default: true, required: true },
         showPublicHolidays: { type: Boolean, default: true, required: true },
         showObservanceHolidays: { type: Boolean, default: true, required: true },
+        defaultCalendarInitialized: { type: Boolean, default: false },
       },
     },
   },

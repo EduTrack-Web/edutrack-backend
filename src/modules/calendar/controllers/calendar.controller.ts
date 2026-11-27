@@ -131,6 +131,17 @@ export const deleteCategory: RequestHandler = async (request, response) => {
   })
 }
 
+export const leaveCategory: RequestHandler = async (request, response) => {
+  const userId = userIdFrom(response.locals)
+  const { categoryId } = request.params
+  await calendarService.leaveCategory(userId, typeof categoryId === 'string' ? categoryId : '')
+  response.json({
+    success: true,
+    data: null,
+    message: 'Bạn đã rời khỏi lịch được chia sẻ.',
+  })
+}
+
 export const exportCategory: RequestHandler = async (request, response) => {
   const userId = userIdFrom(response.locals)
   const { categoryId } = request.params
@@ -156,6 +167,16 @@ export const importCategory: RequestHandler = async (request, response) => {
     success: true,
     data: result,
     message: `Đã nhập thành công ${result.importedCount} sự kiện vào lịch.`,
+  })
+}
+
+export const resolveGuest: RequestHandler = async (request, response) => {
+  const userId = userIdFrom(response.locals)
+  const identifier = typeof request.body?.identifier === 'string' ? request.body.identifier : ''
+  const guest = await calendarService.resolveGuestCandidate(userId, identifier)
+  response.json({
+    success: true,
+    data: guest,
   })
 }
 
@@ -279,6 +300,156 @@ export const respondEventInvitation: RequestHandler = async (request, response) 
     success: true,
     data: { event },
     message: status === 'accepted' ? 'Đã chấp nhận lời mời tham gia sự kiện.' : 'Đã từ chối lời mời tham gia sự kiện.',
+  })
+}
+
+export const enableEventShare: RequestHandler = async (request, response) => {
+  const userId = userIdFrom(response.locals)
+  const { eventId } = request.params
+  const regenerate = Boolean(request.body?.regenerate)
+  const share = await calendarService.enableEventShare(
+    userId,
+    typeof eventId === 'string' ? eventId : '',
+    regenerate,
+  )
+  response.json({
+    success: true,
+    data: share,
+    message: 'Đã tạo liên kết chia sẻ sự kiện.',
+  })
+}
+
+export const revokeEventShare: RequestHandler = async (request, response) => {
+  const userId = userIdFrom(response.locals)
+  const { eventId } = request.params
+  await calendarService.revokeEventShare(userId, typeof eventId === 'string' ? eventId : '')
+  response.json({
+    success: true,
+    data: null,
+    message: 'Đã thu hồi liên kết chia sẻ sự kiện.',
+  })
+}
+
+export const getSharedEventByToken: RequestHandler = async (request, response) => {
+  const userId = userIdFrom(response.locals)
+  const { shareToken } = request.params
+  const event = await calendarService.getSharedEventByToken(
+    userId,
+    typeof shareToken === 'string' ? shareToken : '',
+  )
+  response.json({
+    success: true,
+    data: { event },
+  })
+}
+
+export const requestJoinSharedEvent: RequestHandler = async (request, response) => {
+  const userId = userIdFrom(response.locals)
+  const { shareToken } = request.params
+  const message = typeof request.body?.message === 'string' ? request.body.message : ''
+  const result = await calendarService.requestJoinSharedEvent(
+    userId,
+    typeof shareToken === 'string' ? shareToken : '',
+    message,
+  )
+  response.status(201).json({
+    success: true,
+    data: result,
+    message: 'Đã gửi yêu cầu xin tham gia sự kiện.',
+  })
+}
+
+export const cancelJoinRequest: RequestHandler = async (request, response) => {
+  const userId = userIdFrom(response.locals)
+  const { shareToken } = request.params
+  await calendarService.cancelJoinRequest(
+    userId,
+    typeof shareToken === 'string' ? shareToken : '',
+  )
+  response.json({
+    success: true,
+    data: null,
+    message: 'Đã hủy yêu cầu tham gia sự kiện.',
+  })
+}
+
+export const respondJoinRequest: RequestHandler = async (request, response) => {
+  const userId = userIdFrom(response.locals)
+  const { eventId, requestId } = request.params
+  const decision = request.body?.decision === 'rejected' ? 'rejected' : 'approved'
+  const event = await calendarService.respondJoinRequest(
+    userId,
+    typeof eventId === 'string' ? eventId : '',
+    typeof requestId === 'string' ? requestId : '',
+    decision,
+  )
+  response.json({
+    success: true,
+    data: { event },
+    message: decision === 'approved' ? 'Đã đồng ý yêu cầu tham gia.' : 'Đã từ chối yêu cầu tham gia.',
+  })
+}
+
+export const regeneratePublicToken: RequestHandler = async (request, response) => {
+  const userId = userIdFrom(response.locals)
+  const { categoryId } = request.params
+  const result = await calendarService.regeneratePublicToken(
+    userId,
+    typeof categoryId === 'string' ? categoryId : '',
+  )
+  response.json({
+    success: true,
+    data: result,
+    message: 'Đã tạo liên kết công khai mới.',
+  })
+}
+
+export const getPublicCalendar: RequestHandler = async (request, response) => {
+  const { publicToken } = request.params
+  const data = await calendarService.getPublicCalendarByToken(
+    typeof publicToken === 'string' ? publicToken : '',
+  )
+  response.json({
+    success: true,
+    data,
+  })
+}
+
+export const exportPublicCalendarIcs: RequestHandler = async (request, response) => {
+  const { publicToken } = request.params
+  const { icsContent, filename } = await calendarService.exportPublicCalendarIcs(
+    typeof publicToken === 'string' ? publicToken : '',
+  )
+  response.setHeader('Content-Type', 'text/calendar; charset=utf-8')
+  response.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+  response.send(icsContent)
+}
+
+export const subscribePublicCalendar: RequestHandler = async (request, response) => {
+  const userId = userIdFrom(response.locals)
+  const { publicToken } = request.params
+  await calendarService.subscribePublicCalendar(
+    userId,
+    typeof publicToken === 'string' ? publicToken : '',
+  )
+  response.status(201).json({
+    success: true,
+    data: null,
+    message: 'Đã theo dõi lịch công khai.',
+  })
+}
+
+export const unsubscribePublicCalendar: RequestHandler = async (request, response) => {
+  const userId = userIdFrom(response.locals)
+  const { categoryId } = request.params
+  await calendarService.unsubscribePublicCalendar(
+    userId,
+    typeof categoryId === 'string' ? categoryId : '',
+  )
+  response.json({
+    success: true,
+    data: null,
+    message: 'Đã bỏ theo dõi lịch công khai.',
   })
 }
 

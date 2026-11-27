@@ -85,6 +85,17 @@ function validateChecklistRules(items: SubtaskItem[]): string | undefined {
   )
 }
 
+function normalizeSharedWithList(raw: unknown): Array<{ email: string; role: 'viewer' | 'editor' | 'admin' }> {
+  if (!Array.isArray(raw)) return []
+  return raw
+    .filter((s): s is Record<string, unknown> => Boolean(s && typeof s === 'object' && typeof s.email === 'string'))
+    .map((s) => ({
+      email: (s.email as string).trim().toLowerCase(),
+      role: s.role === 'admin' ? ('admin' as const) : s.role === 'editor' ? ('editor' as const) : ('viewer' as const),
+    }))
+    .filter((s) => Boolean(s.email))
+}
+
 function validateCalendarSettings(input: unknown, errors: Record<string, string>): CalendarSettings | undefined {
   if (input === undefined) return undefined
   const data = input && typeof input === 'object' ? input as Record<string, unknown> : {}
@@ -124,14 +135,7 @@ function validateCalendarSettings(input: unknown, errors: Record<string, string>
   }
   const validatedPrivacy = privacy === 'public' ? 'public' : 'private'
 
-  const validatedSharedWith = Array.isArray(sharedWith)
-    ? sharedWith
-        .filter((s): s is Record<string, unknown> => Boolean(s && typeof s === 'object' && typeof s.email === 'string'))
-        .map((s) => ({
-          email: (s.email as string).trim().toLowerCase(),
-          role: s.role === 'admin' ? ('admin' as const) : s.role === 'editor' ? ('editor' as const) : ('viewer' as const),
-        }))
-    : []
+  const validatedSharedWith = normalizeSharedWithList(sharedWith)
 
   return {
     timeZone,
@@ -172,11 +176,20 @@ export const validateCreateCategory = (input: unknown): CreateCategoryInput => {
     throw new AppError(400, 'CALENDAR_VALIDATION_ERROR', 'Thông tin lịch không hợp lệ', errors)
   }
 
+  const normalizedSharedWith = 'sharedWith' in data
+    ? normalizeSharedWithList(data.sharedWith)
+    : (settings?.sharedWith ?? [])
+
+  if (settings) {
+    settings.sharedWith = normalizedSharedWith
+  }
+
   return {
     name: rawName,
     color: rawColor || '#2563EB',
     description: rawDescription,
     settings,
+    sharedWith: normalizedSharedWith,
   }
 }
 
@@ -186,6 +199,16 @@ export const validateUpdateCategory = (input: unknown): UpdateCategoryInput => {
   const result: UpdateCategoryInput = {}
   const settings = validateCalendarSettings(data.settings, errors)
   if (settings) result.settings = settings
+
+  if ('sharedWith' in data) {
+    const normalizedSharedWith = normalizeSharedWithList(data.sharedWith)
+    result.sharedWith = normalizedSharedWith
+    if (result.settings) {
+      result.settings.sharedWith = normalizedSharedWith
+    }
+  } else if (result.settings) {
+    result.sharedWith = result.settings.sharedWith ?? []
+  }
 
   if ('name' in data) {
     const rawName = typeof data.name === 'string' ? data.name.trim() : ''
@@ -620,6 +643,12 @@ export const validateUpdateEvent = (input: unknown): UpdateEventInput => {
 
   if ('guests' in data) {
     result.guests = parseGuests(data.guests)
+  }
+
+  if ('exceptionDates' in data && Array.isArray(data.exceptionDates)) {
+    result.exceptionDates = data.exceptionDates
+      .filter((d): d is string => typeof d === 'string' && !Number.isNaN(new Date(d).getTime()))
+      .map((d) => new Date(d).toISOString())
   }
 
   if (Object.keys(errors).length > 0) {
