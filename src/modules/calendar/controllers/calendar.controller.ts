@@ -1,12 +1,32 @@
-import type { RequestHandler } from 'express'
+import { randomUUID } from 'node:crypto'
+import type { CookieOptions, RequestHandler } from 'express'
+import { env } from '@/config/env.js'
+import { wakeUpGoogleSyncWorker } from '@/jobs/google-sync-runner.js'
+import { AppError } from '@/shared/errors/app-error.js'
 import type { AuthenticatedRequestLocals } from '@/shared/middleware/authenticate.js'
 import { calendarService } from '@/modules/calendar/services/calendar.service.js'
+import { googleCalendarOAuthService } from '@/modules/calendar/services/google-calendar-oauth.service.js'
+import { googleCalendarSyncService } from '@/modules/calendar/services/google-calendar-sync.service.js'
+import { googleSyncRealtimeHub } from '@/modules/calendar/services/google-sync-realtime.hub.js'
 import { lunarCalendarService } from '@/modules/calendar/services/lunar-calendar.service.js'
 import { vietnameseHolidaysService } from '@/modules/calendar/services/vietnamese-holidays.service.js'
 import type { EventQueryFilters } from '@/modules/calendar/types/calendar.types.js'
 
+const GCAL_STATE_COOKIE = 'edutrack_gcal_state'
+const GCAL_VERIFIER_COOKIE = 'edutrack_gcal_verifier'
+const GCAL_COOKIE_PATH = '/api/v1/calendar/google'
+
+const gcalCookieBase = (): CookieOptions => ({
+  httpOnly: true,
+  secure: env.nodeEnv === 'production',
+  sameSite: env.nodeEnv === 'production' ? 'none' : 'lax',
+  path: GCAL_COOKIE_PATH,
+})
+
 const userIdFrom = (locals: Record<string, unknown>): string =>
   (locals.auth as AuthenticatedRequestLocals).userId
+
+const paramString = (value: unknown): string => (typeof value === 'string' ? value : '')
 
 export const getCalendarPreferences: RequestHandler = async (_request, response) => {
   const preferences = await lunarCalendarService.getPreferences(userIdFrom(response.locals))
@@ -62,18 +82,13 @@ export const createCategory: RequestHandler = async (request, response) => {
   response.status(201).json({
     success: true,
     data: { category },
-    message: 'Tạo lịch mới thành công.',
+    message: 'Đã tạo lịch mới thành công.',
   })
 }
 
 export const updateCategory: RequestHandler = async (request, response) => {
   const userId = userIdFrom(response.locals)
-  const { categoryId } = request.params
-  const category = await calendarService.updateCategory(
-    userId,
-    typeof categoryId === 'string' ? categoryId : '',
-    request.body,
-  )
+  const category = await calendarService.updateCategory(userId, paramString(request.params.categoryId), request.body)
   response.json({
     success: true,
     data: { category },
@@ -83,11 +98,10 @@ export const updateCategory: RequestHandler = async (request, response) => {
 
 export const toggleCategoryVisibility: RequestHandler = async (request, response) => {
   const userId = userIdFrom(response.locals)
-  const { categoryId } = request.params
   const isVisible = Boolean(request.body.isVisible)
   const category = await calendarService.toggleCategoryVisibility(
     userId,
-    typeof categoryId === 'string' ? categoryId : '',
+    paramString(request.params.categoryId),
     isVisible,
   )
   response.json({
@@ -99,10 +113,9 @@ export const toggleCategoryVisibility: RequestHandler = async (request, response
 
 export const setOnlyCategoryVisible: RequestHandler = async (request, response) => {
   const userId = userIdFrom(response.locals)
-  const { categoryId } = request.params
   const categories = await calendarService.setOnlyCategoryVisible(
     userId,
-    typeof categoryId === 'string' ? categoryId : '',
+    paramString(request.params.categoryId),
   )
   response.json({
     success: true,
@@ -124,8 +137,7 @@ export const setAllCategoriesVisibility: RequestHandler = async (request, respon
 
 export const deleteCategory: RequestHandler = async (request, response) => {
   const userId = userIdFrom(response.locals)
-  const { categoryId } = request.params
-  await calendarService.deleteCategory(userId, typeof categoryId === 'string' ? categoryId : '')
+  await calendarService.deleteCategory(userId, paramString(request.params.categoryId))
   response.json({
     success: true,
     data: null,
@@ -146,11 +158,8 @@ export const leaveCategory: RequestHandler = async (request, response) => {
 
 export const exportCategory: RequestHandler = async (request, response) => {
   const userId = userIdFrom(response.locals)
-  const { categoryId } = request.params
-  const { icsContent, filename } = await calendarService.exportCategoryIcs(
-    userId,
-    typeof categoryId === 'string' ? categoryId : '',
-  )
+  const categoryId = paramString(request.params.categoryId)
+  const { icsContent, filename } = await calendarService.exportCategoryIcs(userId, categoryId)
   response.setHeader('Content-Type', 'text/calendar; charset=utf-8')
   response.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
   response.send(icsContent)
@@ -158,13 +167,9 @@ export const exportCategory: RequestHandler = async (request, response) => {
 
 export const importCategory: RequestHandler = async (request, response) => {
   const userId = userIdFrom(response.locals)
-  const { categoryId } = request.params
+  const categoryId = paramString(request.params.categoryId)
   const icsContent = typeof request.body?.icsContent === 'string' ? request.body.icsContent : ''
-  const result = await calendarService.importCategoryIcs(
-    userId,
-    typeof categoryId === 'string' ? categoryId : '',
-    icsContent,
-  )
+  const result = await calendarService.importCategoryIcs(userId, categoryId, icsContent)
   response.status(201).json({
     success: true,
     data: result,
@@ -218,8 +223,7 @@ export const getEvents: RequestHandler = async (request, response) => {
 
 export const getEventById: RequestHandler = async (request, response) => {
   const userId = userIdFrom(response.locals)
-  const { eventId } = request.params
-  const event = await calendarService.getEventById(userId, typeof eventId === 'string' ? eventId : '')
+  const event = await calendarService.getEventById(userId, paramString(request.params.eventId))
   response.json({
     success: true,
     data: { event },
@@ -238,7 +242,6 @@ export const createEvent: RequestHandler = async (request, response) => {
 
 export const updateEvent: RequestHandler = async (request, response) => {
   const userId = userIdFrom(response.locals)
-  const { eventId } = request.params
   const queryMode = typeof request.query.mode === 'string' ? request.query.mode : undefined
   const queryTargetDate = typeof request.query.targetDate === 'string' ? request.query.targetDate : undefined
   const body = (request.body && typeof request.body === 'object' ? request.body : {}) as Record<string, unknown>
@@ -247,7 +250,7 @@ export const updateEvent: RequestHandler = async (request, response) => {
     ...(queryMode ? { mode: queryMode } : {}),
     ...(queryTargetDate ? { targetDate: queryTargetDate } : {}),
   }
-  const event = await calendarService.updateEvent(userId, typeof eventId === 'string' ? eventId : '', payload)
+  const event = await calendarService.updateEvent(userId, paramString(request.params.eventId), payload)
   response.json({
     success: true,
     data: { event },
@@ -257,10 +260,28 @@ export const updateEvent: RequestHandler = async (request, response) => {
 
 export const deleteEvent: RequestHandler = async (request, response) => {
   const userId = userIdFrom(response.locals)
-  const { eventId } = request.params
   const mode = request.query.mode as 'this' | 'following' | 'all' | undefined
   const date = typeof request.query.date === 'string' ? request.query.date : undefined
-  await calendarService.deleteEvent(userId, typeof eventId === 'string' ? eventId : '', mode, date)
+  const rawScope =
+    request.query.googleDeleteScope ??
+    (request.body && typeof request.body === 'object'
+      ? (request.body as Record<string, unknown>).googleDeleteScope
+      : undefined)
+  let googleDeleteScope: 'local_only' | 'both' | undefined
+  if (rawScope !== undefined) {
+    if (rawScope !== 'local_only' && rawScope !== 'both') {
+      throw new AppError(400, 'VALIDATION_ERROR', 'Phạm vi xóa Google Lịch không hợp lệ.')
+    }
+    googleDeleteScope = rawScope
+  }
+
+  await calendarService.deleteEvent(
+    userId,
+    paramString(request.params.eventId),
+    mode,
+    date,
+    googleDeleteScope,
+  )
   response.json({
     success: true,
     data: null,
@@ -270,14 +291,13 @@ export const deleteEvent: RequestHandler = async (request, response) => {
 
 export const toggleTaskComplete: RequestHandler = async (request, response) => {
   const userId = userIdFrom(response.locals)
-  const { eventId } = request.params
   const isCompleted = Boolean(request.body.isCompleted)
   const rawMode = request.body.mode
   const mode = rawMode === 'this' || rawMode === 'following' || rawMode === 'all' ? rawMode : undefined
   const targetDate = typeof request.body.targetDate === 'string' ? request.body.targetDate : undefined
   const event = await calendarService.toggleTaskComplete(
     userId,
-    typeof eventId === 'string' ? eventId : '',
+    paramString(request.params.eventId),
     isCompleted,
     mode,
     targetDate,
@@ -285,23 +305,22 @@ export const toggleTaskComplete: RequestHandler = async (request, response) => {
   response.json({
     success: true,
     data: { event },
-    message: isCompleted ? 'Đã đánh dấu hoàn thành nhiệm vụ.' : 'Đã mở lại nhiệm vụ.',
+    message: isCompleted ? 'Đã đánh dấu hoàn thành!' : 'Đã bỏ đánh dấu hoàn thành.',
   })
 }
 
 export const respondEventInvitation: RequestHandler = async (request, response) => {
   const userId = userIdFrom(response.locals)
-  const { eventId } = request.params
-  const status = request.body.status === 'declined' ? 'declined' : 'accepted'
+  const status = request.body.status === 'accepted' ? 'accepted' : 'declined'
   const event = await calendarService.respondEventInvitation(
     userId,
-    typeof eventId === 'string' ? eventId : '',
+    paramString(request.params.eventId),
     status,
   )
   response.json({
     success: true,
     data: { event },
-    message: status === 'accepted' ? 'Đã chấp nhận lời mời tham gia sự kiện.' : 'Đã từ chối lời mời tham gia sự kiện.',
+    message: status === 'accepted' ? 'Bạn đã chấp nhận tham gia sự kiện.' : 'Bạn đã từ chối lời mời.',
   })
 }
 
@@ -457,11 +476,297 @@ export const unsubscribePublicCalendar: RequestHandler = async (request, respons
 
 export const leaveEvent: RequestHandler = async (request, response) => {
   const userId = userIdFrom(response.locals)
-  const { eventId } = request.params
-  await calendarService.leaveEvent(userId, typeof eventId === 'string' ? eventId : '')
+  await calendarService.leaveEvent(userId, paramString(request.params.eventId))
   response.json({
     success: true,
     data: null,
     message: 'Bạn đã rời khỏi sự kiện thành công.',
+  })
+}
+
+export const startGoogleCalendarConnect: RequestHandler = (request, response) => {
+  try {
+    const rawMode = request.query.mode === 'reconnect' ? 'reconnect' : 'add'
+    const integrationId =
+      typeof request.query.integrationId === 'string' ? request.query.integrationId : undefined
+
+    const { authorizationUrl, nonce, codeVerifier } =
+      googleCalendarOAuthService.createAuthorizationSession({
+        userId: userIdFrom(response.locals),
+        mode: rawMode,
+        integrationId,
+      })
+
+    response.set('Cache-Control', 'no-store')
+    response.clearCookie(GCAL_STATE_COOKIE, gcalCookieBase())
+    response.clearCookie(GCAL_VERIFIER_COOKIE, gcalCookieBase())
+    response.cookie(GCAL_STATE_COOKIE, nonce, { ...gcalCookieBase(), maxAge: 10 * 60 * 1000 })
+    response.cookie(GCAL_VERIFIER_COOKIE, codeVerifier, { ...gcalCookieBase(), maxAge: 10 * 60 * 1000 })
+    response.redirect(authorizationUrl)
+  } catch (error: unknown) {
+    const code = error instanceof AppError ? error.code : 'GOOGLE_CALENDAR_CONNECT_FAILED'
+    const parameters = new URLSearchParams({ googleSyncError: code })
+    response.redirect(`${env.frontendUrl}/calendar?${parameters.toString()}`)
+  }
+}
+
+export const createGoogleCalendarAuthorization: RequestHandler = (request, response) => {
+  const body = (request.body && typeof request.body === 'object' ? request.body : {}) as Record<string, unknown>
+  const mode = body.mode === 'reconnect' ? 'reconnect' : 'add'
+  const integrationId = typeof body.integrationId === 'string' ? body.integrationId : undefined
+
+  const { authorizationUrl, nonce, codeVerifier } =
+    googleCalendarOAuthService.createAuthorizationSession({
+      userId: userIdFrom(response.locals),
+      mode,
+      integrationId,
+    })
+
+  response.set('Cache-Control', 'no-store')
+  response.clearCookie(GCAL_STATE_COOKIE, gcalCookieBase())
+  response.clearCookie(GCAL_VERIFIER_COOKIE, gcalCookieBase())
+  response.cookie(GCAL_STATE_COOKIE, nonce, { ...gcalCookieBase(), maxAge: 10 * 60 * 1000 })
+  response.cookie(GCAL_VERIFIER_COOKIE, codeVerifier, { ...gcalCookieBase(), maxAge: 10 * 60 * 1000 })
+  response.json({
+    success: true,
+    data: { authorizationUrl },
+  })
+}
+
+export const handleGoogleCalendarCallback: RequestHandler = async (request, response) => {
+  const storedNonce: unknown = request.cookies[GCAL_STATE_COOKIE]
+  const codeVerifier: unknown = request.cookies[GCAL_VERIFIER_COOKIE]
+  response.clearCookie(GCAL_STATE_COOKIE, gcalCookieBase())
+  response.clearCookie(GCAL_VERIFIER_COOKIE, gcalCookieBase())
+
+  try {
+    const { integrationId, isNewConnection } = await googleCalendarOAuthService.completeOAuthCallback({
+      errorParam: typeof request.query.error === 'string' ? request.query.error : undefined,
+      rawState: typeof request.query.state === 'string' ? request.query.state : '',
+      code: typeof request.query.code === 'string' ? request.query.code : undefined,
+      storedNonce,
+      codeVerifier,
+    })
+
+    const parameters = new URLSearchParams({
+      googleSyncSuccess: 'ACCOUNT_CONNECTED',
+      integrationId,
+      isNew: isNewConnection ? '1' : '0',
+    })
+    response.redirect(`${env.frontendUrl}/calendar?${parameters.toString()}`)
+  } catch (error: unknown) {
+    const errRecord = error as { code?: unknown; name?: unknown; message?: unknown }
+    console.error('[GoogleCalendarOAuth] callback error:', {
+      name: typeof errRecord?.name === 'string' ? errRecord.name : 'UnknownError',
+      code:
+        typeof errRecord?.code === 'string' || typeof errRecord?.code === 'number'
+          ? errRecord.code
+          : 'UNKNOWN',
+      message: typeof errRecord?.message === 'string' ? errRecord.message : 'Unexpected OAuth callback error',
+    })
+    const errorCode = error instanceof AppError ? error.code : 'GOOGLE_CALENDAR_CONNECT_FAILED'
+    const mappedSyncError =
+      errorCode === 'GOOGLE_CALENDAR_PERMISSION_DENIED' ||
+      errorCode === 'GOOGLE_REFRESH_TOKEN_MISSING' ||
+      errorCode === 'GOOGLE_OAUTH_NOT_CONFIGURED' ||
+      errorCode === 'GOOGLE_ACCOUNT_MISMATCH' ||
+      errorCode === 'GOOGLE_STATE_REPLAYED'
+        ? errorCode
+        : 'GOOGLE_CALENDAR_CONNECT_FAILED'
+    const parameters = new URLSearchParams({ googleSyncError: mappedSyncError })
+    response.redirect(`${env.frontendUrl}/calendar?${parameters.toString()}`)
+  }
+}
+
+export const listGoogleIntegrations: RequestHandler = async (_request, response) => {
+  const data = await googleCalendarSyncService.listIntegrations(userIdFrom(response.locals))
+  response.json({ success: true, data })
+}
+
+export const updateGoogleIntegrationSettings: RequestHandler = async (request, response) => {
+  const data = await googleCalendarSyncService.updateIntegrationSettings(
+    userIdFrom(response.locals),
+    paramString(request.params.integrationId),
+    request.body,
+  )
+  response.json({
+    success: true,
+    data,
+    message: 'Đã cập nhật cài đặt tài khoản Google Lịch.',
+  })
+}
+
+export const refreshGoogleIntegrationCalendars: RequestHandler = async (request, response) => {
+  const data = await googleCalendarSyncService.refreshCalendarsForIntegration(
+    userIdFrom(response.locals),
+    paramString(request.params.integrationId),
+  )
+  response.json({
+    success: true,
+    data,
+    message: 'Đã cập nhật danh sách lịch từ Google.',
+  })
+}
+
+export const updateGoogleCalendarSelection: RequestHandler = async (request, response) => {
+  const data = await googleCalendarSyncService.updateCalendarSelection(
+    userIdFrom(response.locals),
+    paramString(request.params.integrationId),
+    request.body,
+  )
+  wakeUpGoogleSyncWorker()
+  response.json({
+    success: true,
+    data,
+    message: 'Đã cập nhật danh sách lịch Google tham gia đồng bộ.',
+  })
+}
+
+export const syncGoogleIntegration: RequestHandler = async (request, response) => {
+  const data = await googleCalendarSyncService.triggerIntegrationSync(
+    userIdFrom(response.locals),
+    paramString(request.params.integrationId),
+  )
+  wakeUpGoogleSyncWorker()
+  response.json({
+    success: true,
+    data,
+    message: 'Đã đưa yêu cầu đồng bộ vào hàng đợi xử lý.',
+  })
+}
+
+export const unlinkGoogleIntegration: RequestHandler = async (request, response) => {
+  const data = await googleCalendarSyncService.unlinkIntegration(
+    userIdFrom(response.locals),
+    paramString(request.params.integrationId),
+  )
+  response.json({
+    success: true,
+    data,
+    message: 'Đã ngắt kết nối tài khoản Google. Các sự kiện đã đồng bộ vẫn được giữ nguyên.',
+  })
+}
+
+export const updateGoogleCalendarVisibility: RequestHandler = async (request, response) => {
+  const isVisible = Boolean((request.body as { isVisible?: unknown } | undefined)?.isVisible)
+  const data = await googleCalendarSyncService.updateCalendarVisibility(
+    userIdFrom(response.locals),
+    paramString(request.params.calendarConnectionId),
+    isVisible,
+  )
+  response.json({
+    success: true,
+    data,
+  })
+}
+
+export const syncSingleGoogleCalendar: RequestHandler = async (request, response) => {
+  const data = await googleCalendarSyncService.triggerCalendarSync(
+    userIdFrom(response.locals),
+    paramString(request.params.calendarConnectionId),
+  )
+  wakeUpGoogleSyncWorker()
+  response.json({
+    success: true,
+    data,
+    message: 'Đã đưa yêu cầu đồng bộ lịch Google vào hàng đợi xử lý.',
+  })
+}
+
+export const retryGoogleSyncJob: RequestHandler = async (request, response) => {
+  const data = await googleCalendarSyncService.retryJobManually(
+    userIdFrom(response.locals),
+    paramString(request.params.jobId),
+  )
+  wakeUpGoogleSyncWorker()
+  response.json({
+    success: true,
+    data,
+    message: 'Đã đưa tác vụ vào hàng đợi thử lại.',
+  })
+}
+
+export const listGoogleCalendarConflicts: RequestHandler = async (_request, response) => {
+  const conflicts = await googleCalendarSyncService.listPendingConflicts(userIdFrom(response.locals))
+  response.json({ success: true, data: { conflicts } })
+}
+
+export const resolveGoogleCalendarConflict: RequestHandler = async (request, response) => {
+  const userId = userIdFrom(response.locals)
+  const body = (request.body && typeof request.body === 'object' ? request.body : {}) as Record<string, unknown>
+  const rawChoice = body.choice === 'local' || body.choice === 'google' ? body.choice : undefined
+  const rawFieldChoices =
+    body.fieldChoices && typeof body.fieldChoices === 'object'
+      ? (body.fieldChoices as Record<string, 'local' | 'google'>)
+      : undefined
+
+  await googleCalendarSyncService.resolveConflict(userId, paramString(request.params.conflictId), {
+    choice: rawChoice,
+    fieldChoices: rawFieldChoices,
+  })
+  wakeUpGoogleSyncWorker()
+
+  const [conflicts, integrationData] = await Promise.all([
+    googleCalendarSyncService.listPendingConflicts(userId),
+    googleCalendarSyncService.listIntegrations(userId),
+  ])
+  response.json({
+    success: true,
+    data: { conflicts, ...integrationData },
+    message: 'Đã xử lý xung đột dữ liệu thành công.',
+  })
+}
+
+export const handleGoogleCalendarWebhook: RequestHandler = async (request, response) => {
+  const headerString = (name: string): string => {
+    const val = request.headers[name]
+    return typeof val === 'string' ? val : ''
+  }
+
+  await googleCalendarSyncService.handleWebhookNotification({
+    channelId: headerString('x-goog-channel-id'),
+    resourceId: headerString('x-goog-resource-id'),
+    resourceState: headerString('x-goog-resource-state'),
+    channelToken: headerString('x-goog-channel-token'),
+  })
+
+  response.status(200).end()
+}
+
+export const streamGoogleCalendarSyncEvents: RequestHandler = (request, response) => {
+  const userId = userIdFrom(response.locals)
+  const subscriberId = randomUUID()
+
+  response.status(200)
+  response.setHeader('Content-Type', 'text/event-stream')
+  response.setHeader('Cache-Control', 'no-cache, no-transform')
+  response.setHeader('Connection', 'keep-alive')
+  response.setHeader('X-Accel-Buffering', 'no')
+  response.flushHeaders()
+  response.write(`event: connected\ndata: ${JSON.stringify({ subscriberId })}\n\n`)
+
+  const unsubscribe = googleSyncRealtimeHub.subscribe(userId, {
+    id: subscriberId,
+    send: (eventName, payload) => {
+      if (response.writableEnded) return
+      response.write(`event: ${eventName}\ndata: ${JSON.stringify(payload)}\n\n`)
+    },
+  })
+
+  const heartbeatTimer = setInterval(() => {
+    if (response.writableEnded) return
+    response.write(': keep-alive\n\n')
+  }, 25_000)
+
+  void googleCalendarSyncService
+    .onUserRealtimeConnected(userId)
+    .then(() => {
+      wakeUpGoogleSyncWorker()
+    })
+    .catch(() => undefined)
+
+  request.on('close', () => {
+    clearInterval(heartbeatTimer)
+    unsubscribe()
   })
 }

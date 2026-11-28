@@ -86,6 +86,21 @@ export interface UpdateCategoryInput {
   sharedWith?: CategoryMember[]
 }
 
+export type GoogleCalendarAccessRole = 'freeBusyReader' | 'reader' | 'writer' | 'owner'
+
+export interface GoogleEventSource {
+  integrationId?: string
+  calendarConnectionId?: string
+  accountEmail: string
+  calendarName?: string
+  eventColorId?: string
+  eventLabelId?: string
+  eventColor?: string
+  calendarColor: string
+  accessRole?: GoogleCalendarAccessRole
+  creator?: { email?: string; displayName?: string }
+  organizer?: { email?: string; displayName?: string }
+}
 export interface EventJoinRequestItem {
   id: string
   userId: string
@@ -119,6 +134,10 @@ export interface CalendarEventResponse {
   userId: string
   creator?: { id: string; email: string; fullName: string }
   creatorEmail?: string
+  googleSource?: GoogleEventSource
+  isGoogleReadOnly?: boolean
+  syncOrigin?: 'local' | 'google'
+  hasGoogleMappings?: boolean
   calendarId?: string | null
   calendar?: CalendarCategoryResponse | null
   entryType: EntryType

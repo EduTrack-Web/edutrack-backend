@@ -133,8 +133,8 @@ export class VietnameseHolidaysService {
   }
 
   /**
-   * Nhóm A: Sinh toàn bộ ngày lễ/kỷ niệm theo quy tắc cố định và lịch Âm Việt Nam.
-   * Luôn giữ Mùng 1–3 Tết Nguyên Đán và các ngày lễ cố định; không suy đoán ngày nghỉ bù/hoán đổi.
+   * Sinh toàn bộ ngày lễ/kỷ niệm theo quy tắc cố định và lịch Âm Việt Nam.
+   * Luôn giữ Mùng 1–3 Tết Nguyên Đán và các ngày lễ cố định.
    */
   private buildRuleBasedHolidays(year: number): InternalHolidayEntry[] {
     const entries: InternalHolidayEntry[] = []
@@ -269,8 +269,7 @@ export class VietnameseHolidaysService {
   }
 
   /**
-   * Đọc Nhóm B cho tập các năm qua L1 RAM cache + kiểm tra version trên L2 MongoDB + in-flight deduplication.
-   * Khi MongoDB gặp sự cố, ghi log cảnh báo và trả rỗng để Nhóm A vẫn hoạt động bình thường.
+   * Khi MongoDB gặp sự cố, ghi log cảnh báo và trả rỗng.
    */
   private async loadConfirmedOfficialYears(
     years: readonly number[],
@@ -383,10 +382,6 @@ export class VietnameseHolidaysService {
     return resolved
   }
 
-  /**
-   * Hợp nhất Nhóm A (Rule-based) và Nhóm B (Official Year-specific) có khử trùng ngữ nghĩa.
-   * Không cho Nhóm B ghi đè vô điều kiện ngày kỷ niệm hoặc các rule không liên quan của Nhóm A.
-   */
   private mergeHolidays(
     ruleEntries: readonly InternalHolidayEntry[],
     officialRecord: OfficialHolidayYearRecord | null,

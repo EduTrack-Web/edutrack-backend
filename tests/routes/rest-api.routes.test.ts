@@ -42,6 +42,9 @@ test('registers protected RESTful resources instead of returning not found', asy
       '/api/v1/chat/groups',
       '/api/v1/calendar/events',
       '/api/v1/calendar/preferences',
+      '/api/v1/calendar/google/authorizations',
+      '/api/v1/calendar/google/integrations',
+      '/api/v1/calendar/google/conflicts',
       '/api/v1/calendar/lunar-dates?from=2026-01-01&to=2026-01-31',
       '/api/v1/calendar/holidays?from=2026-01-01&to=2026-01-31',
       '/api/v1/notifications',
@@ -58,5 +61,16 @@ test('does not expose legacy action names under the RESTful base path', async ()
   await withServer(async (baseUrl) => {
     const response = await fetch(`${baseUrl}/api/v1/auth/login`, { method: 'POST' })
     assert.equal(response.status, 404)
+  })
+})
+
+test('handles Google Calendar OAuth callback inside calendar module without 404', async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/v1/calendar/google/callback?error=access_denied`, {
+      redirect: 'manual',
+    })
+    assert.equal(response.status, 302)
+    const location = response.headers.get('location') ?? ''
+    assert.match(location, /\/calendar\?googleSyncError=/)
   })
 })

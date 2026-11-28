@@ -4,6 +4,9 @@ import { AppError } from '../../../shared/errors/app-error.js'
 import { CalendarCategoryModel } from '../models/calendar-category.model.js'
 import { EventModel } from '../models/event.model.js'
 import { calendarRepository } from '../repositories/calendar.repository.js'
+import { googleCalendarRepository } from '../repositories/google-calendar.repository.js'
+import { wakeUpGoogleSyncWorker } from '@/jobs/google-sync-runner.js'
+import { googleCalendarSyncService } from './google-calendar-sync.service.js'
 import { UserModel } from '@/modules/auth/models/user.model.js'
 import { NotificationModel } from '@/modules/notifications/models/notification.model.js'
 import { notificationService } from '@/modules/notifications/services/notification.service.js'
@@ -13,6 +16,7 @@ import type {
   CalendarEventResponse,
   EventJoinRequestItem,
   EventQueryFilters,
+  GoogleEventSource,
   RecurrenceConfig,
   RecurrenceFrequency,
   ReminderItem,
@@ -51,6 +55,10 @@ interface RawPopulatedCategory {
 interface RawEventDoc {
   _id: unknown
   userId: unknown
+  googleSource?: GoogleEventSource
+  isGoogleReadOnly?: boolean
+  syncOrigin?: 'local' | 'google'
+  googleEventId?: string
   calendarId?: unknown
   entryType: 'event' | 'task'
   title: string
@@ -80,6 +88,7 @@ interface RawEventDoc {
     count?: number | null
   }
   exceptionDates?: (Date | string)[]
+  googleExceptionDates?: Date[]
   recurringEventId?: unknown
   originalStartDate?: Date | string | null
   createdAt?: Date
@@ -318,10 +327,28 @@ const mapEventResponse = (doc: RawEventDoc): CalendarEventResponse => {
   return {
     id: String(doc._id),
     userId: rawUserId,
-    creator: creatorInfo,
-    creatorEmail: creatorInfo?.email ?? '',
-    calendarId: rawCalendarId,
-    calendar: calendarInfo,
+    creator: doc.googleSource ? undefined : creatorInfo,
+    creatorEmail: doc.googleSource ? doc.googleSource.creator?.email ?? '' : creatorInfo?.email ?? '',
+    googleSource: doc.googleSource ? {
+      integrationId: doc.googleSource.integrationId ? String(doc.googleSource.integrationId) : undefined,
+      calendarConnectionId: doc.googleSource.calendarConnectionId
+        ? String(doc.googleSource.calendarConnectionId)
+        : undefined,
+      accountEmail: doc.googleSource.accountEmail,
+      calendarName: doc.googleSource.calendarName,
+      eventColorId: doc.googleSource.eventColorId,
+      eventLabelId: doc.googleSource.eventLabelId,
+      eventColor: doc.googleSource.eventColor,
+      calendarColor: doc.googleSource.calendarColor,
+      accessRole: doc.googleSource.accessRole,
+      creator: doc.googleSource.creator,
+      organizer: doc.googleSource.organizer,
+    } : undefined,
+    isGoogleReadOnly: Boolean(doc.isGoogleReadOnly),
+    syncOrigin: doc.syncOrigin ?? 'local',
+    hasGoogleMappings: Boolean(doc.googleEventId || doc.googleSource),
+    calendarId: doc.googleSource ? null : rawCalendarId,
+    calendar: doc.googleSource ? null : calendarInfo,
     entryType: doc.entryType,
     title: doc.title,
     description: doc.description ?? '',
@@ -333,9 +360,19 @@ const mapEventResponse = (doc: RawEventDoc): CalendarEventResponse => {
     location: doc.location ?? '',
     onlineMeetingUrl: doc.onlineMeetingUrl ?? '',
     submissionUrl: doc.submissionUrl ?? '',
-    inheritsCalendarColor: doc.entryType === 'event' && !doc.color,
+    inheritsCalendarColor:
+      doc.entryType === 'event' &&
+      (!doc.color ||
+        Boolean(
+          doc.googleSource &&
+            !doc.googleSource.eventColorId &&
+            !doc.googleSource.eventLabelId &&
+            !doc.googleSource.eventColor &&
+            doc.color.toLowerCase() === doc.googleSource.calendarColor.toLowerCase(),
+        )),
     color:
       doc.color ||
+      (doc.googleSource && (doc.googleSource.eventColor || doc.googleSource.calendarColor)) ||
       (doc.entryType === 'task'
         ? doc.priority === 'urgent'
           ? '#EF4444'
@@ -356,11 +393,11 @@ const mapEventResponse = (doc: RawEventDoc): CalendarEventResponse => {
     checklist: Array.isArray(doc.checklist) ? doc.checklist : [],
     reminders: Array.isArray(doc.reminders) ? doc.reminders : [{ method: 'in-app', minutesBefore: 15 }],
     recurrence: formattedRecurrence,
-    exceptionDates: Array.isArray((doc as unknown as { exceptionDates?: (Date | string)[] }).exceptionDates)
-      ? (doc as unknown as { exceptionDates: (Date | string)[] }).exceptionDates.map((d) =>
-          d instanceof Date ? d.toISOString() : new Date(d).toISOString(),
-        )
-      : [],
+
+    exceptionDates: [...new Set([
+      ...(doc.exceptionDates ?? []),
+      ...(doc.googleExceptionDates ?? []),
+    ].map((date) => new Date(date).toISOString()))],
     shareToken: (doc as unknown as { shareToken?: string | null }).shareToken ?? null,
     isShareEnabled: Boolean((doc as unknown as { isShareEnabled?: boolean }).isShareEnabled),
     joinRequests: Array.isArray((doc as unknown as { joinRequests?: unknown[] }).joinRequests)
@@ -783,6 +820,12 @@ export const calendarService = {
       }
     }
 
+    if (result.entryType === 'event') {
+      void googleCalendarSyncService.enqueueLocalEventPush(userId, result.id).then(() => {
+        wakeUpGoogleSyncWorker()
+      })
+    }
+
     return result
   },
 
@@ -793,6 +836,24 @@ export const calendarService = {
     const existing = await calendarRepository.findEventById(userId, eventId, user?.email)
     if (!existing) {
       throw new AppError(404, 'EVENT_NOT_FOUND', 'Không tìm thấy sự kiện yêu cầu')
+    }
+
+    if (existing.isGoogleReadOnly) {
+      throw new AppError(
+        403,
+        'EVENT_READ_ONLY',
+        'Sự kiện từ Google Calendar này chỉ có quyền xem, không thể chỉnh sửa.',
+      )
+    }
+    if (existing.syncOrigin === 'google') {
+      const editableCount = await googleCalendarRepository.countEditableMappingsForEvent(existing._id)
+      if (editableCount === 0) {
+        throw new AppError(
+          403,
+          'EVENT_READ_ONLY',
+          'Bạn không còn quyền chỉnh sửa sự kiện này trên Google Calendar.',
+        )
+      }
     }
 
     const rawOwnerId =
@@ -962,6 +1023,9 @@ export const calendarService = {
           exceptionDates: [],
           recurringEventId: new Types.ObjectId(eventId),
           originalStartDate: targetDate,
+          ...(existing.googleSource ? { googleSource: existing.googleSource } : {}),
+          ...(existing.syncOrigin ? { syncOrigin: existing.syncOrigin } : {}),
+          ...(existing.googleCalendarId ? { googleCalendarId: existing.googleCalendarId } : {}),
           remindersSent: [],
         }
 
@@ -971,7 +1035,23 @@ export const calendarService = {
           String(createdStandalone._id),
           user?.email,
         )
-        return mapEventResponse((populated ?? createdStandalone) as unknown as RawEventDoc)
+        const standaloneResult = mapEventResponse((populated ?? createdStandalone) as unknown as RawEventDoc)
+        if (standaloneResult.entryType === 'event') {
+          const pushNewPromise = existing.syncOrigin === 'google'
+            ? googleCalendarSyncService.enqueueDetachedGoogleEventPush(
+                rawOwnerId,
+                eventId,
+                standaloneResult.id,
+              )
+            : googleCalendarSyncService.enqueueLocalEventPush(rawOwnerId, standaloneResult.id)
+          void Promise.all([
+            googleCalendarSyncService.enqueueLocalEventPush(rawOwnerId, eventId),
+            pushNewPromise,
+          ]).then(() => {
+            wakeUpGoogleSyncWorker()
+          })
+        }
+        return standaloneResult
       }
 
       if (mode === 'following' && targetDateKey > baseStartKey) {
@@ -1038,6 +1118,9 @@ export const calendarService = {
                 count: null,
               },
           exceptionDates: futureExceptions,
+          ...(existing.googleSource ? { googleSource: existing.googleSource } : {}),
+          ...(existing.syncOrigin ? { syncOrigin: existing.syncOrigin } : {}),
+          ...(existing.googleCalendarId ? { googleCalendarId: existing.googleCalendarId } : {}),
           remindersSent: [],
         }
 
@@ -1056,7 +1139,23 @@ export const calendarService = {
           String(createdFollowing._id),
           user?.email,
         )
-        return mapEventResponse((populated ?? createdFollowing) as unknown as RawEventDoc)
+        const followingResult = mapEventResponse((populated ?? createdFollowing) as unknown as RawEventDoc)
+        if (followingResult.entryType === 'event') {
+          const pushFollowingPromise = existing.syncOrigin === 'google'
+            ? googleCalendarSyncService.enqueueDetachedGoogleEventPush(
+                rawOwnerId,
+                eventId,
+                followingResult.id,
+              )
+            : googleCalendarSyncService.enqueueLocalEventPush(rawOwnerId, followingResult.id)
+          void Promise.all([
+            googleCalendarSyncService.enqueueLocalEventPush(rawOwnerId, eventId),
+            pushFollowingPromise,
+          ]).then(() => {
+            wakeUpGoogleSyncWorker()
+          })
+        }
+        return followingResult
       }
 
       if (mode === 'all_this_weekday') {
@@ -1113,6 +1212,9 @@ export const calendarService = {
               count: null,
             },
             exceptionDates: [],
+            ...(existing.googleSource ? { googleSource: existing.googleSource } : {}),
+            ...(existing.syncOrigin ? { syncOrigin: existing.syncOrigin } : {}),
+            ...(existing.googleCalendarId ? { googleCalendarId: existing.googleCalendarId } : {}),
             remindersSent: [],
           }
 
@@ -1122,7 +1224,26 @@ export const calendarService = {
             String(createdWeekdaySeries._id),
             user?.email,
           )
-          return mapEventResponse((populated ?? createdWeekdaySeries) as unknown as RawEventDoc)
+          const weekdayResult = mapEventResponse((populated ?? createdWeekdaySeries) as unknown as RawEventDoc)
+          if (weekdayResult.entryType === 'event') {
+            const pushWeekdayPromise = existing.syncOrigin === 'google'
+              ? googleCalendarSyncService.enqueueDetachedGoogleEventPush(
+                  rawOwnerId,
+                  eventId,
+                  weekdayResult.id,
+                )
+              : googleCalendarSyncService.enqueueLocalEventPush(rawOwnerId, weekdayResult.id)
+            const pushTargets = remainingDays.length > 0
+              ? [
+                  googleCalendarSyncService.enqueueLocalEventPush(rawOwnerId, eventId),
+                  pushWeekdayPromise,
+                ]
+              : [pushWeekdayPromise]
+            void Promise.all(pushTargets).then(() => {
+              wakeUpGoogleSyncWorker()
+            })
+          }
+          return weekdayResult
         }
       }
     }
@@ -1155,7 +1276,28 @@ export const calendarService = {
       }
     }
 
-    const updated = await calendarRepository.updateEvent(rawOwnerId, eventId, data)
+    let googleColorFields: Record<string, unknown> | undefined
+    if (existing.googleSource && 'color' in data) {
+      const nextColor = typeof data.color === 'string' ? data.color.trim() : ''
+      const prevColor = typeof existing.color === 'string' ? existing.color.trim() : ''
+      const colorChanged = nextColor.toLowerCase() !== prevColor.toLowerCase()
+      if (!nextColor) {
+        googleColorFields = {
+          'googleSource.eventColorId': '',
+          'googleSource.eventLabelId': '',
+          'googleSource.eventColor': '',
+        }
+      } else if (colorChanged || !existing.googleSource.eventLabelId) {
+        const { findClosestGoogleEventColorId } = await import('@/modules/calendar/services/google-calendar-mapper.js')
+        googleColorFields = {
+          'googleSource.eventColorId': findClosestGoogleEventColorId(nextColor),
+          'googleSource.eventLabelId': '',
+          'googleSource.eventColor': nextColor,
+        }
+      }
+    }
+
+    const updated = await calendarRepository.updateEvent(rawOwnerId, eventId, data, googleColorFields)
     if (!updated) {
       throw new AppError(404, 'EVENT_NOT_FOUND', 'Không tìm thấy sự kiện yêu cầu')
     }
@@ -1240,6 +1382,12 @@ export const calendarService = {
           description: result.description,
         })
       }
+    }
+
+    if (result.entryType === 'event') {
+      void googleCalendarSyncService.enqueueLocalEventPush(rawOwnerId, result.id).then(() => {
+        wakeUpGoogleSyncWorker()
+      })
     }
 
     return result
@@ -1349,6 +1497,7 @@ export const calendarService = {
     eventId: string,
     mode?: 'this' | 'following' | 'all',
     targetDateStr?: string,
+    googleDeleteScope?: 'local_only' | 'both',
   ): Promise<void> => {
     const user = await UserModel.findById(userId).select('email').lean()
     const existing = await calendarRepository.findEventById(userId, eventId, user?.email)
@@ -1366,6 +1515,24 @@ export const calendarService = {
 
     if (!isOwner && !isCategoryEditor) {
       throw new AppError(403, 'FORBIDDEN', 'Bạn không có quyền xóa sự kiện này')
+        const activeMappings = (await googleCalendarRepository.findMappingsByEventId(userId, eventId))
+      .filter((m) => m.status !== 'suppressed_local_delete')
+
+    if (activeMappings.length > 0) {
+      if (!googleDeleteScope) {
+        throw new AppError(
+          400,
+          'GOOGLE_DELETE_SCOPE_REQUIRED',
+          'Vui lòng chọn xóa chỉ trên EduTrack hoặc xóa trên cả Google Lịch.',
+        )
+      }
+      if (googleDeleteScope === 'both' && existing.isGoogleReadOnly) {
+        throw new AppError(
+          403,
+          'EVENT_READ_ONLY',
+          'Sự kiện chỉ đọc từ Google Calendar không thể xóa trên Google.',
+        )
+      }
     }
 
     if (existing.recurrence && existing.recurrence.frequency !== 'none' && mode && mode !== 'all' && targetDateStr) {
@@ -1377,16 +1544,30 @@ export const calendarService = {
 
       if (mode === 'this') {
         await EventModel.updateOne(
-          { _id: eventId, userId: rawOwnerId },
-          { $addToSet: { exceptionDates: targetDate } },
+          { _id: eventId, userId },
+          {
+            $addToSet: {
+              exceptionDates: targetDate,
+              ...(googleDeleteScope === 'local_only' ? { googleExceptionDates: targetDate } : {}),
+            },
+          },
         )
+        if (existing.entryType === 'event' && googleDeleteScope === 'both') {
+          void googleCalendarSyncService.enqueueLocalEventPush(userId, eventId).then(() => {
+            wakeUpGoogleSyncWorker()
+          })
+        }
         return
       }
 
       if (mode === 'following') {
         if (targetDateKey <= baseStartKey) {
-          await calendarRepository.deleteEvent(rawOwnerId, eventId)
-          await EventModel.deleteMany({ userId: rawOwnerId, recurringEventId: eventId })
+          if (activeMappings.length > 0 && googleDeleteScope) {
+            await googleCalendarSyncService.enqueueLocalEventDelete(userId, eventId, googleDeleteScope)
+            wakeUpGoogleSyncWorker()
+          }
+          await calendarRepository.deleteEvent(userId, eventId)
+          await EventModel.deleteMany({ userId, recurringEventId: eventId })
           return
         }
         const untilDate = new Date(targetDate.getTime() - 1000)
@@ -1410,11 +1591,20 @@ export const calendarService = {
           recurringEventId: eventId,
           originalStartDate: { $gte: targetDate },
         })
+        if (existing.entryType === 'event' && googleDeleteScope === 'both') {
+          void googleCalendarSyncService.enqueueLocalEventPush(userId, eventId).then(() => {
+            wakeUpGoogleSyncWorker()
+          })
+        }
         return
       }
     }
 
-    await calendarRepository.deleteEvent(rawOwnerId, eventId)
+    if (activeMappings.length > 0 && googleDeleteScope) {
+      await googleCalendarSyncService.enqueueLocalEventDelete(userId, eventId, googleDeleteScope)
+      wakeUpGoogleSyncWorker()
+    }
+    await calendarRepository.deleteEvent(userId, eventId)
     if (existing.recurrence && existing.recurrence.frequency !== 'none') {
       await EventModel.deleteMany({ userId: rawOwnerId, recurringEventId: eventId })
     }
