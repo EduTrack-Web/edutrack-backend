@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import { Types } from 'mongoose'
 import { AppError } from '../../../shared/errors/app-error.js'
 import { CalendarCategoryModel } from '../models/calendar-category.model.js'
@@ -9,15 +10,17 @@ import { googleCalendarSyncService } from './google-calendar-sync.service.js'
 import { UserModel } from '@/modules/auth/models/user.model.js'
 import { NotificationModel } from '@/modules/notifications/models/notification.model.js'
 import { notificationService } from '@/modules/notifications/services/notification.service.js'
-import { sendEventInvitationEmail } from '@/modules/auth/services/email.service.js'
+import { sendCategorySharedEmail, sendEventInvitationEmail } from '@/modules/auth/services/email.service.js'
 import type {
   CalendarCategoryResponse,
   CalendarEventResponse,
+  EventJoinRequestItem,
   EventQueryFilters,
   GoogleEventSource,
   RecurrenceConfig,
   RecurrenceFrequency,
   ReminderItem,
+  SharedEventPreviewResponse,
   SubtaskItem,
 } from '../types/calendar.types.js'
 import {
@@ -119,19 +122,159 @@ const resolveCategoryObjectId = (val: unknown): Types.ObjectId | null => {
   return null
 }
 
-const mapCategoryResponse = (doc: RawCategoryDoc): CalendarCategoryResponse => ({
-  id: String(doc._id),
-  userId: String(doc.userId),
-  name: doc.name,
-  color: doc.color,
-  settings: doc.settings,
-  sharedWith: doc.sharedWith ?? doc.settings?.sharedWith ?? [],
-  description: doc.description ?? '',
-  isVisible: doc.isVisible ?? true,
-  isDefault: Boolean(doc.isDefault),
-  createdAt: doc.createdAt ? doc.createdAt.toISOString() : new Date().toISOString(),
-  updatedAt: doc.updatedAt ? doc.updatedAt.toISOString() : new Date().toISOString(),
-})
+const resolveActiveGuestAccount = async (
+  rawIdentifier: string,
+  creatorEmail?: string,
+): Promise<{ email: string; fullName: string }> => {
+  const identifier = rawIdentifier.trim().toLowerCase()
+  const escaped = identifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const query = identifier.includes('@')
+    ? { email: new RegExp(`^${escaped}$`, 'i') }
+    : { username: new RegExp(`^${escaped}$`, 'i') }
+
+  const found = await UserModel.findOne(query).select('email fullName status').lean()
+  if (!found || !found.email) {
+    throw new AppError(400, 'USER_NOT_FOUND', 'Không tìm thấy người dùng')
+  }
+  if (found.status !== 'active') {
+    throw new AppError(
+      400,
+      'USER_NOT_ACTIVE',
+      'Không thể mời người dùng chưa kích hoạt hoặc đang bị khóa',
+    )
+  }
+
+  const resolvedEmail = found.email.trim().toLowerCase()
+  if (creatorEmail && resolvedEmail === creatorEmail) {
+    throw new AppError(400, 'CANNOT_INVITE_CREATOR', 'Không thể mời lại người tạo sự kiện.')
+  }
+
+  return {
+    email: resolvedEmail,
+    fullName: found.fullName || '',
+  }
+}
+
+const getCategoryRole = (
+  category: { userId: unknown; sharedWith?: Array<{ email?: string; role?: string }>; settings?: { sharedWith?: Array<{ email?: string; role?: string }> } },
+  userId: string,
+  userEmail?: string,
+): 'owner' | 'admin' | 'editor' | 'viewer' | null => {
+  if (String(category.userId) === userId) return 'owner'
+  if (!userEmail) return null
+  const cleanEmail = userEmail.trim().toLowerCase()
+  const members = category.sharedWith ?? category.settings?.sharedWith ?? []
+  const match = members.find((m) => m.email && m.email.trim().toLowerCase() === cleanEmail)
+  if (!match) return null
+  if (match.role === 'admin' || match.role === 'editor') return match.role
+  return 'viewer'
+}
+
+const getEventCategoryRole = async (
+  calendarId: unknown,
+  userId: string,
+  userEmail?: string,
+): Promise<'owner' | 'admin' | 'editor' | 'viewer' | null> => {
+  const catObjId = resolveCategoryObjectId(calendarId)
+  if (!catObjId) return null
+  const cat = await calendarRepository.findCategoryDocById(String(catObjId))
+  if (!cat) return null
+  return getCategoryRole(cat as unknown as RawCategoryDoc, userId, userEmail)
+}
+
+const resolveCategorySharedMembers = async (
+  members: Array<{ email: string; role: 'viewer' | 'editor' | 'admin' }>,
+  ownerEmail?: string,
+): Promise<Array<{ email: string; role: 'viewer' | 'editor' | 'admin' }>> => {
+  const seen = new Set<string>()
+  const resolvedList: Array<{ email: string; role: 'viewer' | 'editor' | 'admin' }> = []
+  for (const member of members) {
+    const resolved = await resolveActiveGuestAccount(member.email, ownerEmail)
+    if (!seen.has(resolved.email)) {
+      seen.add(resolved.email)
+      resolvedList.push({
+        email: resolved.email,
+        role: member.role === 'admin' || member.role === 'editor' ? member.role : 'viewer',
+      })
+    }
+  }
+  return resolvedList
+}
+
+const notifyNewCategoryMembers = async (
+  members: Array<{ email: string; role: 'viewer' | 'editor' | 'admin' }>,
+  previousEmails: Set<string>,
+  categoryName: string,
+  sharerName: string,
+  description?: string,
+) => {
+  const roleLabelMap: Record<'viewer' | 'editor' | 'admin', string> = {
+    viewer: 'Chỉ xem',
+    editor: 'Chỉnh sửa sự kiện',
+    admin: 'Quản lý toàn diện',
+  }
+  for (const member of members) {
+    const cleanEmail = member.email.trim().toLowerCase()
+    if (previousEmails.has(cleanEmail)) continue
+    const escaped = cleanEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const targetUser = await UserModel.findOne({
+      email: new RegExp(`^${escaped}$`, 'i'),
+      status: { $ne: 'locked' },
+    }).lean()
+    if (targetUser) {
+      void notificationService.createNotification({
+        userId: String(targetUser._id),
+        type: 'calendar_shared',
+        title: `Lịch được chia sẻ: ${categoryName}`,
+        message: `${sharerName} đã chia sẻ lịch "${categoryName}" với bạn (quyền: ${roleLabelMap[member.role]}).`,
+        link: '/calendar',
+        metadata: {
+          categoryName,
+          role: member.role,
+        },
+      })
+    }
+
+    void sendCategorySharedEmail(cleanEmail, {
+      categoryName,
+      sharerName,
+      roleLabel: roleLabelMap[member.role],
+      description,
+    })
+  }
+}
+
+const mapCategoryResponse = (
+  doc: RawCategoryDoc,
+  userId?: string,
+  userEmail?: string,
+): CalendarCategoryResponse => {
+  const role = userId ? getCategoryRole(doc, userId, userEmail) : null
+  const subscribers = Array.isArray((doc as unknown as { subscribers?: unknown[] }).subscribers)
+    ? (doc as unknown as { subscribers: unknown[] }).subscribers
+    : []
+  const isSubscribed = Boolean(!role && userId && subscribers.some((s) => String(s) === userId))
+  const effectiveRole = role ?? (isSubscribed ? ('viewer' as const) : undefined)
+  const sharedWith = doc.sharedWith ?? doc.settings?.sharedWith ?? []
+  const rawToken = (doc as unknown as { publicToken?: string | null }).publicToken ?? null
+  return {
+    id: String(doc._id),
+    userId: String(doc.userId),
+    name: doc.name,
+    color: doc.color,
+    settings: doc.settings,
+    sharedWith: isSubscribed ? [] : sharedWith,
+    isShared: (role !== null && role !== 'owner') || isSubscribed,
+    isSubscribed,
+    publicToken: doc.settings?.privacy === 'public' ? rawToken : null,
+    myRole: effectiveRole,
+    description: doc.description ?? '',
+    isVisible: doc.isVisible ?? true,
+    isDefault: Boolean(doc.isDefault),
+    createdAt: doc.createdAt ? doc.createdAt.toISOString() : new Date().toISOString(),
+    updatedAt: doc.updatedAt ? doc.updatedAt.toISOString() : new Date().toISOString(),
+  }
+}
 
 const mapEventResponse = (doc: RawEventDoc): CalendarEventResponse => {
   let calendarInfo: CalendarCategoryResponse | null = null
@@ -250,10 +393,25 @@ const mapEventResponse = (doc: RawEventDoc): CalendarEventResponse => {
     checklist: Array.isArray(doc.checklist) ? doc.checklist : [],
     reminders: Array.isArray(doc.reminders) ? doc.reminders : [{ method: 'in-app', minutesBefore: 15 }],
     recurrence: formattedRecurrence,
+
     exceptionDates: [...new Set([
       ...(doc.exceptionDates ?? []),
       ...(doc.googleExceptionDates ?? []),
     ].map((date) => new Date(date).toISOString()))],
+    shareToken: (doc as unknown as { shareToken?: string | null }).shareToken ?? null,
+    isShareEnabled: Boolean((doc as unknown as { isShareEnabled?: boolean }).isShareEnabled),
+    joinRequests: Array.isArray((doc as unknown as { joinRequests?: unknown[] }).joinRequests)
+      ? ((doc as unknown as { joinRequests: Array<Record<string, unknown>> }).joinRequests).map((r) => ({
+          id: String(r._id),
+          userId: String(r.userId),
+          email: String(r.email ?? ''),
+          fullName: String(r.fullName ?? ''),
+          message: String(r.message ?? ''),
+          status: (r.status === 'approved' || r.status === 'rejected' ? r.status : 'pending') as EventJoinRequestItem['status'],
+          createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : new Date(String(r.createdAt ?? Date.now())).toISOString(),
+          respondedAt: r.respondedAt instanceof Date ? r.respondedAt.toISOString() : r.respondedAt ? new Date(String(r.respondedAt)).toISOString() : null,
+        }))
+      : [],
     createdAt: doc.createdAt ? doc.createdAt.toISOString() : new Date().toISOString(),
     updatedAt: doc.updatedAt ? doc.updatedAt.toISOString() : new Date().toISOString(),
   }
@@ -268,8 +426,9 @@ export const calendarService = {
       name: { $in: ['🎓 Học chính khoá', 'Học chính khoá', '📝 Bài tập & Hạn chót', '💡 Tự học - Try hard', '🌟 Cá nhân & Hoạt động', 'Học tập'] },
     })
 
-    const categories = await calendarRepository.findCategoriesByUserId(userId)
-    return categories.map((cat) => mapCategoryResponse(cat as unknown as RawCategoryDoc))
+    const user = await UserModel.findById(userId).select('email').lean()
+    const categories = await calendarRepository.findCategoriesByUserId(userId, user?.email)
+    return categories.map((cat) => mapCategoryResponse(cat as unknown as RawCategoryDoc, userId, user?.email))
   },
 
   createCategory: async (userId: string, payload: unknown): Promise<CalendarCategoryResponse> => {
@@ -282,20 +441,52 @@ export const calendarService = {
       })
     }
 
+    const creator = await UserModel.findById(userId).select('email fullName').lean()
+    const creatorEmail = creator?.email?.trim().toLowerCase()
+    const creatorName = creator?.fullName || 'Người dùng EduTrack'
+
+    if (data.sharedWith && data.sharedWith.length > 0) {
+      const resolvedMembers = await resolveCategorySharedMembers(data.sharedWith, creatorEmail)
+      data.sharedWith = resolvedMembers
+      if (data.settings) {
+        data.settings.sharedWith = resolvedMembers
+      }
+    }
+
     const created = await calendarRepository.createCategory(userId, data)
-    return mapCategoryResponse(created as unknown as RawCategoryDoc)
+    if (data.settings?.privacy === 'public') {
+      const publicToken = randomBytes(16).toString('base64url')
+      await CalendarCategoryModel.updateOne({ _id: created._id }, { $set: { publicToken } })
+      ;(created as unknown as { publicToken?: string }).publicToken = publicToken
+    }
+    if (data.sharedWith && data.sharedWith.length > 0) {
+      void notifyNewCategoryMembers(data.sharedWith, new Set(), created.name, creatorName, created.description)
+    }
+
+    return mapCategoryResponse(created as unknown as RawCategoryDoc, userId, creatorEmail)
   },
 
   updateCategory: async (userId: string, categoryId: string, payload: unknown): Promise<CalendarCategoryResponse> => {
     const data = validateUpdateCategory(payload)
+    const currentUser = await UserModel.findById(userId).select('email fullName').lean()
+    const userEmail = currentUser?.email?.trim().toLowerCase()
 
-    const existing = await calendarRepository.findCategoryById(userId, categoryId)
+    const existing = await calendarRepository.findCategoryDocById(categoryId)
     if (!existing) {
       throw new AppError(404, 'CATEGORY_NOT_FOUND', 'Không tìm thấy lịch yêu cầu')
     }
 
+    const role = getCategoryRole(existing as unknown as RawCategoryDoc, userId, userEmail)
+    if (!role) {
+      throw new AppError(404, 'CATEGORY_NOT_FOUND', 'Không tìm thấy lịch yêu cầu')
+    }
+    if (role !== 'owner' && role !== 'admin') {
+      throw new AppError(403, 'FORBIDDEN', 'Bạn không có quyền chỉnh sửa cấu hình lịch này')
+    }
+
+    const ownerId = String(existing.userId)
     if (data.name && data.name.toLowerCase() !== existing.name.toLowerCase()) {
-      const duplicate = await calendarRepository.findCategoryByName(userId, data.name)
+      const duplicate = await calendarRepository.findCategoryByName(ownerId, data.name)
       if (duplicate && String(duplicate._id) !== categoryId) {
         throw new AppError(409, 'CATEGORY_EXISTS', 'Tên lịch đã tồn tại', {
           name: 'Tên lịch đã tồn tại',
@@ -303,12 +494,39 @@ export const calendarService = {
       }
     }
 
-    const updated = await calendarRepository.updateCategory(userId, categoryId, data)
+    const owner = ownerId === userId
+      ? currentUser
+      : await UserModel.findById(ownerId).select('email fullName').lean()
+    const ownerEmail = owner?.email?.trim().toLowerCase()
+    const prevMembers = existing.sharedWith ?? existing.settings?.sharedWith ?? []
+    const prevEmails = new Set(prevMembers.map((m) => (m.email || '').trim().toLowerCase()).filter(Boolean))
+
+    if (data.sharedWith !== undefined) {
+      const resolvedMembers = await resolveCategorySharedMembers(data.sharedWith, ownerEmail)
+      data.sharedWith = resolvedMembers
+      if (data.settings) {
+        data.settings.sharedWith = resolvedMembers
+      }
+    }
+
+    const updated = await calendarRepository.updateCategoryById(categoryId, data)
     if (!updated) {
       throw new AppError(404, 'CATEGORY_NOT_FOUND', 'Không tìm thấy lịch yêu cầu')
     }
 
-    return mapCategoryResponse(updated as unknown as RawCategoryDoc)
+    const existingToken = (existing as unknown as { publicToken?: string | null }).publicToken
+    if (data.settings?.privacy === 'public' && !existingToken) {
+      const publicToken = randomBytes(16).toString('base64url')
+      await CalendarCategoryModel.updateOne({ _id: categoryId }, { $set: { publicToken } })
+      ;(updated as unknown as { publicToken?: string }).publicToken = publicToken
+    }
+
+    if (data.sharedWith && data.sharedWith.length > 0) {
+      const sharerName = currentUser?.fullName || 'Người dùng EduTrack'
+      void notifyNewCategoryMembers(data.sharedWith, prevEmails, updated.name, sharerName, updated.description)
+    }
+
+    return mapCategoryResponse(updated as unknown as RawCategoryDoc, userId, userEmail)
   },
 
   toggleCategoryVisibility: async (
@@ -352,23 +570,150 @@ export const calendarService = {
   },
 
   deleteCategory: async (userId: string, categoryId: string): Promise<void> => {
-    const existing = await calendarRepository.findCategoryById(userId, categoryId)
+    const user = await UserModel.findById(userId).select('email fullName').lean()
+    const existing = await calendarRepository.findCategoryDocById(categoryId)
     if (!existing) {
       throw new AppError(404, 'CATEGORY_NOT_FOUND', 'Không tìm thấy lịch yêu cầu')
     }
 
-    if (existing.isDefault) {
-      throw new AppError(400, 'CANNOT_DELETE_DEFAULT_CATEGORY', 'Không thể xóa lịch mặc định của hệ thống')
+    const role = getCategoryRole(existing as unknown as RawCategoryDoc, userId, user?.email)
+    if (!role) {
+      throw new AppError(404, 'CATEGORY_NOT_FOUND', 'Không tìm thấy lịch yêu cầu')
+    }
+    if (role !== 'owner') {
+      throw new AppError(403, 'FORBIDDEN', 'Chỉ chủ sở hữu mới có quyền xóa vĩnh viễn lịch này')
     }
 
     await calendarRepository.deleteCategory(userId, categoryId)
-    await EventModel.updateMany({ userId, calendarId: categoryId }, { $set: { calendarId: null } })
+
+    const members = existing.sharedWith ?? existing.settings?.sharedWith ?? []
+    const ownerName = user?.fullName || 'Chủ sở hữu lịch'
+    for (const member of members) {
+      const cleanEmail = (member.email || '').trim().toLowerCase()
+      if (!cleanEmail) continue
+      const escaped = cleanEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const targetUser = await UserModel.findOne({
+        email: new RegExp(`^${escaped}$`, 'i'),
+        status: { $ne: 'locked' },
+      }).lean()
+      if (targetUser) {
+        void notificationService.createNotification({
+          userId: String(targetUser._id),
+          type: 'calendar_shared',
+          title: `Lịch đã bị xóa: ${existing.name}`,
+          message: `${ownerName} đã xóa vĩnh viễn lịch "${existing.name}" và các sự kiện thuộc lịch này.`,
+          link: '/calendar',
+          metadata: {
+            categoryId,
+            categoryName: existing.name,
+            deletedByEmail: user?.email,
+          },
+        })
+      }
+    }
+  },
+
+  leaveCategory: async (userId: string, categoryId: string): Promise<void> => {
+    const user = await UserModel.findById(userId).select('email fullName').lean()
+    const userEmail = user?.email?.trim().toLowerCase()
+    if (!userEmail) {
+      throw new AppError(404, 'USER_NOT_FOUND', 'Không tìm thấy thông tin tài khoản')
+    }
+
+    const existing = await calendarRepository.findCategoryDocById(categoryId)
+    if (!existing) {
+      throw new AppError(404, 'CATEGORY_NOT_FOUND', 'Không tìm thấy lịch yêu cầu')
+    }
+
+    const role = getCategoryRole(existing as unknown as RawCategoryDoc, userId, userEmail)
+    if (!role) {
+      throw new AppError(404, 'CATEGORY_NOT_FOUND', 'Bạn không nằm trong danh sách chia sẻ của lịch này')
+    }
+    if (role === 'owner') {
+      throw new AppError(400, 'CANNOT_LEAVE_OWN_CATEGORY', 'Chủ sở hữu không thể rời khỏi lịch của chính mình')
+    }
+
+    await calendarRepository.leaveCategory(categoryId, userEmail)
+
+    const leaverName = user?.fullName || userEmail
+    void notificationService.createNotification({
+      userId: String(existing.userId),
+      type: 'calendar_shared',
+      title: `Thành viên đã rời lịch: ${existing.name}`,
+      message: `${leaverName} (${userEmail}) đã rời khỏi lịch "${existing.name}".`,
+      link: '/calendar',
+      metadata: {
+        categoryId,
+        categoryName: existing.name,
+        leftByEmail: userEmail,
+      },
+    })
+  },
+
+  resolveGuestCandidate: async (
+    userId: string,
+    rawIdentifier: string,
+  ): Promise<{ email: string; fullName: string }> => {
+    const cleanIdentifier = rawIdentifier.trim().toLowerCase()
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    const usernameRegex = /^[a-zA-Z0-9._-]{3,40}$/
+
+    if (!cleanIdentifier) {
+      throw new AppError(400, 'GUEST_IDENTIFIER_REQUIRED', 'Vui lòng nhập email hoặc username khách mời')
+    }
+    if (!emailRegex.test(cleanIdentifier) && !usernameRegex.test(cleanIdentifier)) {
+      throw new AppError(
+        400,
+        'GUEST_IDENTIFIER_INVALID',
+        'Email hoặc username không đúng định dạng (username từ 3 đến 40 ký tự)',
+      )
+    }
+
+    const currentUser = await UserModel.findById(userId).select('email').lean()
+    const selfEmail = currentUser?.email?.trim().toLowerCase()
+    const resolved = await resolveActiveGuestAccount(cleanIdentifier)
+
+    if (selfEmail && resolved.email === selfEmail) {
+      throw new AppError(400, 'CANNOT_INVITE_SELF', 'Bạn không thể tự mời chính mình')
+    }
+
+    return resolved
   },
 
   getEvents: async (userId: string, filters: EventQueryFilters = {}): Promise<CalendarEventResponse[]> => {
     const user = await UserModel.findById(userId).select('email fullName').lean()
+    const userEmail = user?.email?.trim().toLowerCase()
     const events = await calendarRepository.findEvents(userId, user?.email, filters)
-    return events.map((item) => mapEventResponse(item as unknown as RawEventDoc))
+
+    const subscribedDocs = await CalendarCategoryModel.find({
+      subscribers: userId,
+      'settings.privacy': 'public',
+    })
+      .select('_id userId sharedWith settings.sharedWith')
+      .lean()
+    const subscribedOnlyCatIds = new Set(
+      subscribedDocs
+        .filter((cat) => {
+          const role = getCategoryRole(cat as unknown as RawCategoryDoc, userId, userEmail)
+          return role === null
+        })
+        .map((cat) => String(cat._id)),
+    )
+
+    const results: CalendarEventResponse[] = []
+    for (const item of events) {
+      const mapped = mapEventResponse(item as unknown as RawEventDoc)
+      const isSubscriberOnly =
+        Boolean(mapped.calendarId && subscribedOnlyCatIds.has(mapped.calendarId)) &&
+        mapped.userId !== userId &&
+        !(mapped.guests ?? []).some((g) => Boolean(userEmail && g.email.toLowerCase() === userEmail))
+
+      if (isSubscriberOnly && mapped.visibility === 'private') {
+        continue
+      }
+      results.push(mapped)
+    }
+    return results
   },
 
   getEventById: async (userId: string, eventId: string): Promise<CalendarEventResponse> => {
@@ -386,25 +731,36 @@ export const calendarService = {
     const creator = await UserModel.findById(userId).select('email fullName').lean()
     const creatorEmail = creator?.email?.trim().toLowerCase()
 
-    if (data.guests && data.guests.length > 0) {
-      for (const guest of data.guests) {
-        const identifier = guest.email.trim().toLowerCase()
-        if (!identifier.includes('@')) {
-          const found = await UserModel.findOne({
-            username: new RegExp(`^${identifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
-            status: { $ne: 'locked' },
-          }).select('email').lean()
-          if (found?.email) {
-            guest.email = found.email.toLowerCase()
-          } else {
-            throw new AppError(400, 'USER_NOT_FOUND', `Không tìm thấy tài khoản với tên người dùng "${identifier}".`)
-          }
-        }
+    if (data.calendarId) {
+      const category = await calendarRepository.findCategoryDocById(data.calendarId)
+      if (!category) {
+        throw new AppError(404, 'CATEGORY_NOT_FOUND', 'Không tìm thấy lịch yêu cầu')
       }
+      const catRole = getCategoryRole(category as unknown as RawCategoryDoc, userId, creatorEmail)
+      if (!catRole) {
+        throw new AppError(404, 'CATEGORY_NOT_FOUND', 'Không tìm thấy lịch yêu cầu')
+      }
+      if (catRole === 'viewer') {
+        throw new AppError(403, 'FORBIDDEN', 'Bạn chỉ có quyền xem lịch này, không thể thêm sự kiện')
+      }
+      if (data.visibility === 'public' && (category.settings?.privacy !== 'public' || data.entryType === 'task')) {
+        data.visibility = data.entryType === 'task' ? 'private' : 'default'
+      }
+    } else if (data.visibility === 'public') {
+      data.visibility = data.entryType === 'task' ? 'private' : 'default'
     }
 
-    if (data.guests && creatorEmail) {
-      data.guests = data.guests.filter((g) => g.email.trim().toLowerCase() !== creatorEmail)
+    if (data.guests && data.guests.length > 0) {
+      const seenEmails = new Set<string>()
+      const resolvedGuests: typeof data.guests = []
+      for (const guest of data.guests) {
+        const resolved = await resolveActiveGuestAccount(guest.email, creatorEmail)
+        if (!seenEmails.has(resolved.email)) {
+          seenEmails.add(resolved.email)
+          resolvedGuests.push({ ...guest, email: resolved.email })
+        }
+      }
+      data.guests = resolvedGuests
     }
 
     if (!data.calendarId && data.entryType === 'task' && !data.color) {
@@ -509,7 +865,10 @@ export const calendarService = {
     const creator = await UserModel.findById(rawOwnerId).select('email fullName').lean()
     const creatorEmail = creator?.email?.trim().toLowerCase()
 
-    if (!isOwner) {
+    const categoryRole = await getEventCategoryRole(existing.calendarId, userId, user?.email)
+    const isCategoryEditor = categoryRole === 'owner' || categoryRole === 'admin' || categoryRole === 'editor'
+
+    if (!isOwner && !isCategoryEditor) {
       const currentGuest = existing.guests?.find(
         (g) => Boolean(user?.email && g.email.toLowerCase() === user.email.toLowerCase()),
       )
@@ -525,23 +884,47 @@ export const calendarService = {
       } else {
         delete data.calendarId
       }
-    }
-
-    if (data.guests && data.guests.length > 0) {
-      for (const guest of data.guests) {
-        const identifier = guest.email.trim().toLowerCase()
-        if (!identifier.includes('@')) {
-          const found = await UserModel.findOne({
-            username: new RegExp(`^${identifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
-            status: { $ne: 'locked' },
-          }).select('email').lean()
-          if (found?.email) {
-            guest.email = found.email.toLowerCase()
+    } else if (!isOwner && isCategoryEditor) {
+      if (data.calendarId !== undefined) {
+        const nextCatId = data.calendarId ? String(data.calendarId) : ''
+        const prevCatId = resolveCategoryObjectId(existing.calendarId)
+        if (nextCatId !== (prevCatId ? String(prevCatId) : '')) {
+          if (!nextCatId) {
+            delete data.calendarId
           } else {
-            throw new AppError(400, 'USER_NOT_FOUND', `Không tìm thấy tài khoản với tên người dùng "${identifier}".`)
+            const nextRole = await getEventCategoryRole(nextCatId, userId, user?.email)
+            if (nextRole !== 'owner' && nextRole !== 'admin' && nextRole !== 'editor') {
+              throw new AppError(403, 'FORBIDDEN', 'Bạn không có quyền chuyển sự kiện sang lịch này')
+            }
           }
         }
       }
+    }
+
+    if (data.guests && data.guests.length > 0) {
+      const oldEmails = new Set((existing.guests || []).map((g) => g.email.trim().toLowerCase()))
+      const seenEmails = new Set<string>()
+      const resolvedGuests: typeof data.guests = []
+
+      for (const guest of data.guests) {
+        const identifier = guest.email.trim().toLowerCase()
+        if (oldEmails.has(identifier)) {
+          if (creatorEmail && identifier === creatorEmail) {
+            throw new AppError(400, 'CANNOT_INVITE_CREATOR', 'Không thể mời lại người tạo sự kiện.')
+          }
+          if (!seenEmails.has(identifier)) {
+            seenEmails.add(identifier)
+            resolvedGuests.push({ ...guest, email: identifier })
+          }
+        } else {
+          const resolved = await resolveActiveGuestAccount(identifier, creatorEmail)
+          if (!seenEmails.has(resolved.email)) {
+            seenEmails.add(resolved.email)
+            resolvedGuests.push({ ...guest, email: resolved.email })
+          }
+        }
+      }
+      data.guests = resolvedGuests
     }
 
     if (data.guests && creatorEmail) {
@@ -553,7 +936,7 @@ export const calendarService = {
       }
     }
 
-    if (!isOwner && data.guests && existing.guests) {
+    if (!isOwner && !isCategoryEditor && data.guests && existing.guests) {
       const existingGuestMap = new Map(
         existing.guests.map((g) => [g.email.toLowerCase(), g]),
       )
@@ -921,7 +1304,7 @@ export const calendarService = {
 
     const result = mapEventResponse(updated as unknown as RawEventDoc)
 
-    if (isOwner && data.guests && existing.guests) {
+    if ((isOwner || isCategoryEditor) && data.guests && existing.guests) {
       for (const guest of data.guests) {
         const oldGuest = existing.guests.find(
           (og) => og.email.trim().toLowerCase() === guest.email.trim().toLowerCase(),
@@ -1116,12 +1499,23 @@ export const calendarService = {
     targetDateStr?: string,
     googleDeleteScope?: 'local_only' | 'both',
   ): Promise<void> => {
-    const existing = await calendarRepository.findEventById(userId, eventId)
+    const user = await UserModel.findById(userId).select('email').lean()
+    const existing = await calendarRepository.findEventById(userId, eventId, user?.email)
     if (!existing) {
       throw new AppError(404, 'EVENT_NOT_FOUND', 'Không tìm thấy sự kiện yêu cầu')
     }
 
-    const activeMappings = (await googleCalendarRepository.findMappingsByEventId(userId, eventId))
+    const rawOwnerId =
+      existing.userId && typeof existing.userId === 'object' && '_id' in existing.userId
+        ? String((existing.userId as { _id: unknown })._id)
+        : String(existing.userId)
+    const isOwner = rawOwnerId === userId
+    const categoryRole = await getEventCategoryRole(existing.calendarId, userId, user?.email)
+    const isCategoryEditor = categoryRole === 'owner' || categoryRole === 'admin' || categoryRole === 'editor'
+
+    if (!isOwner && !isCategoryEditor) {
+      throw new AppError(403, 'FORBIDDEN', 'Bạn không có quyền xóa sự kiện này')
+        const activeMappings = (await googleCalendarRepository.findMappingsByEventId(userId, eventId))
       .filter((m) => m.status !== 'suppressed_local_delete')
 
     if (activeMappings.length > 0) {
@@ -1183,7 +1577,7 @@ export const calendarService = {
         const pastExceptions = existingExceptions.filter((ex) => toDateKey(ex, eventZone) < targetDateKey)
 
         await EventModel.updateOne(
-          { _id: eventId, userId },
+          { _id: eventId, userId: rawOwnerId },
           {
             $set: {
               'recurrence.until': untilDate,
@@ -1193,7 +1587,7 @@ export const calendarService = {
           },
         )
         await EventModel.deleteMany({
-          userId,
+          userId: rawOwnerId,
           recurringEventId: eventId,
           originalStartDate: { $gte: targetDate },
         })
@@ -1212,7 +1606,7 @@ export const calendarService = {
     }
     await calendarRepository.deleteEvent(userId, eventId)
     if (existing.recurrence && existing.recurrence.frequency !== 'none') {
-      await EventModel.deleteMany({ userId, recurringEventId: eventId })
+      await EventModel.deleteMany({ userId: rawOwnerId, recurringEventId: eventId })
     }
   },
 
@@ -1223,9 +1617,25 @@ export const calendarService = {
     mode?: 'this' | 'following' | 'all',
     targetDateStr?: string,
   ): Promise<CalendarEventResponse> => {
-    const existing = await calendarRepository.findEventById(userId, eventId)
+    const user = await UserModel.findById(userId).select('email').lean()
+    const existing = await calendarRepository.findEventById(userId, eventId, user?.email)
     if (!existing) {
       throw new AppError(404, 'EVENT_NOT_FOUND', 'Không tìm thấy nhiệm vụ yêu cầu')
+    }
+
+    const rawOwnerId =
+      existing.userId && typeof existing.userId === 'object' && '_id' in existing.userId
+        ? String((existing.userId as { _id: unknown })._id)
+        : String(existing.userId)
+    const isOwner = rawOwnerId === userId
+    const categoryRole = await getEventCategoryRole(existing.calendarId, userId, user?.email)
+    const isCategoryEditor = categoryRole === 'owner' || categoryRole === 'admin' || categoryRole === 'editor'
+    const currentGuest = existing.guests?.find(
+      (g) => Boolean(user?.email && g.email.toLowerCase() === user.email.toLowerCase()),
+    )
+
+    if (!isOwner && !isCategoryEditor && !currentGuest?.canModify) {
+      throw new AppError(403, 'FORBIDDEN', 'Bạn không có quyền cập nhật nhiệm vụ này')
     }
 
     if (existing.recurrence && existing.recurrence.frequency !== 'none' && mode && mode !== 'all' && targetDateStr) {
@@ -1239,12 +1649,12 @@ export const calendarService = {
 
       if (mode === 'this') {
         await EventModel.updateOne(
-          { _id: eventId, userId },
+          { _id: eventId, userId: rawOwnerId },
           { $addToSet: { exceptionDates: targetDate } },
         )
 
         const createdStandalone = await EventModel.create({
-          userId: new Types.ObjectId(userId),
+          userId: new Types.ObjectId(rawOwnerId),
           calendarId: resolveCategoryObjectId(existing.calendarId),
           entryType: existing.entryType,
           title: existing.title,
@@ -1283,7 +1693,7 @@ export const calendarService = {
         const futureExceptions = existingExceptions.filter((ex) => toDateKey(ex, eventZone) > targetDateKey)
 
         await EventModel.updateOne(
-          { _id: eventId, userId },
+          { _id: eventId, userId: rawOwnerId },
           {
             $set: {
               'recurrence.until': untilDate,
@@ -1294,7 +1704,7 @@ export const calendarService = {
         )
 
         const createdFollowing = await EventModel.create({
-          userId: new Types.ObjectId(userId),
+          userId: new Types.ObjectId(rawOwnerId),
           calendarId: resolveCategoryObjectId(existing.calendarId),
           entryType: existing.entryType,
           title: existing.title,
@@ -1328,7 +1738,7 @@ export const calendarService = {
 
         await EventModel.updateMany(
           {
-            userId: new Types.ObjectId(userId),
+            userId: new Types.ObjectId(rawOwnerId),
             recurringEventId: new Types.ObjectId(eventId),
             originalStartDate: { $gte: targetDate },
           },
@@ -1339,7 +1749,7 @@ export const calendarService = {
       }
     }
 
-    const updated = await calendarRepository.toggleTaskComplete(userId, eventId, isCompleted)
+    const updated = await calendarRepository.toggleTaskComplete(rawOwnerId, eventId, isCompleted)
     if (!updated) {
       throw new AppError(404, 'EVENT_NOT_FOUND', 'Không tìm thấy nhiệm vụ yêu cầu')
     }
@@ -1348,12 +1758,17 @@ export const calendarService = {
   },
 
   exportCategoryIcs: async (userId: string, categoryId: string): Promise<{ icsContent: string; filename: string }> => {
-    const category = await calendarRepository.findCategoryById(userId, categoryId)
+    const user = await UserModel.findById(userId).select('email').lean()
+    const category = await calendarRepository.findCategoryDocById(categoryId)
     if (!category) {
       throw new AppError(404, 'CATEGORY_NOT_FOUND', 'Không tìm thấy lịch yêu cầu')
     }
+    const role = getCategoryRole(category as unknown as RawCategoryDoc, userId, user?.email)
+    if (!role) {
+      throw new AppError(404, 'CATEGORY_NOT_FOUND', 'Không tìm thấy lịch yêu cầu')
+    }
 
-    const events = await calendarRepository.findEvents(userId, undefined, { calendarId: categoryId })
+    const events = await calendarRepository.findEventsByCategoryId(categoryId)
     const mappedEvents = events.map((item) => mapEventResponse(item as unknown as RawEventDoc))
 
     const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`)
@@ -1411,9 +1826,17 @@ export const calendarService = {
     categoryId: string,
     rawIcsContent: string,
   ): Promise<{ importedCount: number }> => {
-    const category = await calendarRepository.findCategoryById(userId, categoryId)
+    const user = await UserModel.findById(userId).select('email').lean()
+    const category = await calendarRepository.findCategoryDocById(categoryId)
     if (!category) {
       throw new AppError(404, 'CATEGORY_NOT_FOUND', 'Không tìm thấy lịch yêu cầu')
+    }
+    const role = getCategoryRole(category as unknown as RawCategoryDoc, userId, user?.email)
+    if (!role) {
+      throw new AppError(404, 'CATEGORY_NOT_FOUND', 'Không tìm thấy lịch yêu cầu')
+    }
+    if (role === 'viewer') {
+      throw new AppError(403, 'FORBIDDEN', 'Bạn chỉ có quyền xem lịch này, không thể nhập sự kiện từ file .ics')
     }
 
     if (!rawIcsContent || typeof rawIcsContent !== 'string') {
@@ -1474,7 +1897,7 @@ export const calendarService = {
         continue
       }
       if (trimmed === 'END:VEVENT') {
-        if (inEvent && currentEvent.SUMMARY) {
+        if (inEvent && (currentEvent.SUMMARY || currentEvent.DTSTART)) {
           const startInfo = currentEvent.DTSTART ? parseIcsDate(currentEvent.DTSTART) : null
           let endInfo = currentEvent.DTEND ? parseIcsDate(currentEvent.DTEND) : null
           if (startInfo) {
@@ -1484,8 +1907,9 @@ export const calendarService = {
                 isAllDay: startInfo.isAllDay,
               }
             }
+            const rawTitle = currentEvent.SUMMARY ? unescapeIcs(currentEvent.SUMMARY).trim() : ''
             parsedEvents.push({
-              title: unescapeIcs(currentEvent.SUMMARY).slice(0, 150),
+              title: (rawTitle || 'Không có tiêu đề').slice(0, 150),
               description: currentEvent.DESCRIPTION ? unescapeIcs(currentEvent.DESCRIPTION).slice(0, 2000) : '',
               startDate: startInfo.date,
               endDate: endInfo.date,
@@ -1534,5 +1958,476 @@ export const calendarService = {
 
     await EventModel.insertMany(docsToInsert)
     return { importedCount: docsToInsert.length }
+  },
+
+  enableEventShare: async (
+    userId: string,
+    eventId: string,
+    regenerate = false,
+  ): Promise<{ shareToken: string; isShareEnabled: boolean }> => {
+    if (!Types.ObjectId.isValid(eventId)) {
+      throw new AppError(404, 'EVENT_NOT_FOUND', 'Không tìm thấy sự kiện yêu cầu')
+    }
+    const event = await EventModel.findById(eventId)
+    if (!event) {
+      throw new AppError(404, 'EVENT_NOT_FOUND', 'Không tìm thấy sự kiện yêu cầu')
+    }
+    if (String(event.userId) !== userId) {
+      throw new AppError(403, 'FORBIDDEN', 'Chỉ người tạo sự kiện mới có quyền chia sẻ liên kết')
+    }
+    if (event.entryType !== 'event') {
+      throw new AppError(400, 'INVALID_ENTRY_TYPE', 'Chỉ hỗ trợ chia sẻ liên kết cho sự kiện')
+    }
+
+    const token = !event.shareToken || regenerate ? randomBytes(18).toString('base64url') : event.shareToken
+    event.shareToken = token
+    event.isShareEnabled = true
+    await event.save()
+
+    return { shareToken: token, isShareEnabled: true }
+  },
+
+  revokeEventShare: async (userId: string, eventId: string): Promise<void> => {
+    if (!Types.ObjectId.isValid(eventId)) {
+      throw new AppError(404, 'EVENT_NOT_FOUND', 'Không tìm thấy sự kiện yêu cầu')
+    }
+    const event = await EventModel.findById(eventId)
+    if (!event) {
+      throw new AppError(404, 'EVENT_NOT_FOUND', 'Không tìm thấy sự kiện yêu cầu')
+    }
+    if (String(event.userId) !== userId) {
+      throw new AppError(403, 'FORBIDDEN', 'Chỉ người tạo sự kiện mới có quyền thu hồi liên kết')
+    }
+
+    event.isShareEnabled = false
+    event.shareToken = null
+    await event.save()
+  },
+
+  getSharedEventByToken: async (
+    userId: string,
+    shareToken: string,
+  ): Promise<SharedEventPreviewResponse> => {
+    const cleanToken = shareToken.trim()
+    if (!cleanToken) {
+      throw new AppError(404, 'SHARED_EVENT_NOT_FOUND', 'Sự kiện không còn tồn tại hoặc liên kết đã hết hiệu lực')
+    }
+
+    const event = await EventModel.findOne({
+      shareToken: cleanToken,
+      isShareEnabled: true,
+      entryType: 'event',
+    })
+      .populate('userId', 'fullName')
+      .populate('calendarId', 'color')
+      .lean()
+
+    if (!event) {
+      throw new AppError(404, 'SHARED_EVENT_NOT_FOUND', 'Sự kiện không còn tồn tại hoặc liên kết đã hết hiệu lực')
+    }
+
+    const viewer = await UserModel.findById(userId).select('email').lean()
+    const viewerEmail = viewer?.email?.trim().toLowerCase() ?? ''
+
+    const ownerPop =
+      event.userId && typeof event.userId === 'object' && '_id' in event.userId
+        ? (event.userId as { _id: unknown; fullName?: string })
+        : null
+    const ownerId = ownerPop ? String(ownerPop._id) : String(event.userId)
+    const creatorName = ownerPop?.fullName || 'Người dùng EduTrack'
+
+    const calColor =
+      event.calendarId && typeof event.calendarId === 'object' && 'color' in event.calendarId
+        ? String((event.calendarId as { color?: string }).color || '#2563EB')
+        : '#2563EB'
+
+    let viewerStatus: SharedEventPreviewResponse['viewerStatus'] = 'none'
+    let myRequestId: string | undefined
+
+    if (ownerId === userId) {
+      viewerStatus = 'owner'
+    } else {
+      const matchedGuest = (event.guests || []).find(
+        (g) => Boolean(viewerEmail && g.email.trim().toLowerCase() === viewerEmail),
+      )
+      if (matchedGuest?.status === 'accepted') {
+        viewerStatus = 'accepted'
+      } else if (matchedGuest?.status === 'pending') {
+        viewerStatus = 'pending_invite'
+      } else {
+        const requests = Array.isArray(event.joinRequests) ? event.joinRequests : []
+        const pendingReq = requests.find(
+          (r) => String(r.userId) === userId && r.status === 'pending',
+        )
+        if (pendingReq) {
+          viewerStatus = 'pending_request'
+          myRequestId = String(pendingReq._id)
+        } else if (requests.some((r) => String(r.userId) === userId && r.status === 'rejected')) {
+          viewerStatus = 'rejected'
+        }
+      }
+    }
+
+    return {
+      id: String(event._id),
+      title: event.title,
+      description: event.description ?? '',
+      startDate: event.startDate.toISOString(),
+      endDate: event.endDate.toISOString(),
+      isAllDay: Boolean(event.isAllDay),
+      location: event.location ?? '',
+      onlineMeetingUrl: event.onlineMeetingUrl ?? '',
+      color: event.color || calColor,
+      timeZone: event.timeZone ?? '',
+      creator: { id: ownerId, fullName: creatorName },
+      recurrence: event.recurrence
+        ? {
+            frequency: event.recurrence.frequency as RecurrenceFrequency,
+            interval: event.recurrence.interval ?? 1,
+            daysOfWeek: event.recurrence.daysOfWeek ?? [],
+            until: event.recurrence.until ? new Date(event.recurrence.until).toISOString() : null,
+            count: event.recurrence.count ?? null,
+          }
+        : undefined,
+      viewerStatus,
+      myRequestId,
+    }
+  },
+
+  requestJoinSharedEvent: async (
+    userId: string,
+    shareToken: string,
+    rawMessage = '',
+  ): Promise<{ requestId: string }> => {
+    const cleanToken = shareToken.trim()
+    const event = await EventModel.findOne({
+      shareToken: cleanToken,
+      isShareEnabled: true,
+      entryType: 'event',
+    })
+    if (!event) {
+      throw new AppError(404, 'SHARED_EVENT_NOT_FOUND', 'Sự kiện không còn tồn tại hoặc liên kết đã hết hiệu lực')
+    }
+    if (String(event.userId) === userId) {
+      throw new AppError(400, 'CANNOT_JOIN_OWN_EVENT', 'Bạn là người tạo sự kiện này')
+    }
+
+    const viewer = await UserModel.findById(userId).select('email fullName').lean()
+    const viewerEmail = viewer?.email?.trim().toLowerCase()
+    if (!viewerEmail) {
+      throw new AppError(404, 'USER_NOT_FOUND', 'Không tìm thấy tài khoản người dùng')
+    }
+
+    const existingGuest = (event.guests || []).find(
+      (g) => g.email.trim().toLowerCase() === viewerEmail,
+    )
+    if (existingGuest?.status === 'accepted') {
+      throw new AppError(409, 'ALREADY_PARTICIPANT', 'Bạn đã tham gia sự kiện này')
+    }
+    if (existingGuest?.status === 'pending') {
+      throw new AppError(409, 'INVITATION_PENDING', 'Bạn đã có lời mời tham gia sự kiện này')
+    }
+
+    const existingPendingReq = (event.joinRequests || []).find(
+      (r) => String(r.userId) === userId && r.status === 'pending',
+    )
+    if (existingPendingReq) {
+      throw new AppError(409, 'JOIN_REQUEST_EXISTS', 'Yêu cầu của bạn đang chờ duyệt')
+    }
+
+    const cleanMessage = rawMessage.trim().slice(0, 300)
+    const requesterName = viewer?.fullName || viewerEmail
+    event.joinRequests.push({
+      userId: new Types.ObjectId(userId),
+      email: viewerEmail,
+      fullName: requesterName,
+      message: cleanMessage,
+      status: 'pending',
+      createdAt: new Date(),
+      respondedAt: null,
+    })
+    await event.save()
+
+    const createdReq = event.joinRequests[event.joinRequests.length - 1]
+    const requestId = createdReq ? String(createdReq._id) : ''
+
+    try {
+      await notificationService.createNotification({
+        userId: String(event.userId),
+        type: 'event_join_request',
+        title: `Yêu cầu tham gia sự kiện: ${event.title}`,
+        message: `${requesterName} xin tham gia sự kiện "${event.title}"${cleanMessage ? `: "${cleanMessage}"` : '.'}`,
+        eventId: String(event._id),
+        link: '/calendar',
+        metadata: {
+          requestId,
+          requesterEmail: viewerEmail,
+          requesterName,
+          status: 'pending',
+        },
+      })
+    } catch (err) {
+      console.warn('[CalendarService] Không thể gửi thông báo yêu cầu tham gia:', err)
+    }
+
+    return { requestId }
+  },
+
+  cancelJoinRequest: async (userId: string, shareToken: string): Promise<void> => {
+    const cleanToken = shareToken.trim()
+    const event = await EventModel.findOne({
+      shareToken: cleanToken,
+      isShareEnabled: true,
+      entryType: 'event',
+    })
+    if (!event) {
+      throw new AppError(404, 'SHARED_EVENT_NOT_FOUND', 'Sự kiện không còn tồn tại hoặc liên kết đã hết hiệu lực')
+    }
+
+    await EventModel.updateOne(
+      { _id: event._id },
+      { $pull: { joinRequests: { userId: new Types.ObjectId(userId), status: 'pending' } } },
+    )
+  },
+
+  respondJoinRequest: async (
+    userId: string,
+    eventId: string,
+    requestId: string,
+    decision: 'approved' | 'rejected',
+  ): Promise<CalendarEventResponse> => {
+    if (!Types.ObjectId.isValid(eventId) || !Types.ObjectId.isValid(requestId)) {
+      throw new AppError(404, 'JOIN_REQUEST_NOT_FOUND', 'Không tìm thấy yêu cầu tham gia')
+    }
+
+    const event = await EventModel.findById(eventId)
+    if (!event) {
+      throw new AppError(404, 'EVENT_NOT_FOUND', 'Không tìm thấy sự kiện yêu cầu')
+    }
+    if (String(event.userId) !== userId) {
+      throw new AppError(403, 'FORBIDDEN', 'Chỉ người tạo sự kiện mới có quyền duyệt yêu cầu')
+    }
+
+    const targetReq = event.joinRequests.find((r) => String(r._id) === requestId)
+    if (!targetReq) {
+      throw new AppError(404, 'JOIN_REQUEST_NOT_FOUND', 'Không tìm thấy yêu cầu tham gia')
+    }
+    if (targetReq.status !== 'pending') {
+      throw new AppError(400, 'JOIN_REQUEST_ALREADY_HANDLED', 'Yêu cầu này đã được xử lý trước đó')
+    }
+
+    targetReq.status = decision
+    targetReq.respondedAt = new Date()
+
+    if (decision === 'approved') {
+      const cleanEmail = targetReq.email.trim().toLowerCase()
+      const existingGuest = event.guests.find((g) => g.email.trim().toLowerCase() === cleanEmail)
+      if (existingGuest) {
+        existingGuest.status = 'accepted'
+      } else {
+        event.guests.push({
+          email: cleanEmail,
+          role: 'viewer',
+          canModify: false,
+          canInviteOthers: true,
+          canSeeGuestList: true,
+          status: 'accepted',
+        })
+      }
+      event.markModified('guests')
+    }
+
+    event.markModified('joinRequests')
+    await event.save()
+
+    try {
+      await NotificationModel.updateMany(
+        { eventId: event._id, type: 'event_join_request', 'metadata.requestId': requestId },
+        { $set: { isRead: true, 'metadata.status': decision } },
+      )
+      await notificationService.createNotification({
+        userId: String(targetReq.userId),
+        type: 'event_join_response',
+        title: decision === 'approved'
+          ? `Đã được duyệt tham gia: ${event.title}`
+          : `Yêu cầu tham gia bị từ chối: ${event.title}`,
+        message: decision === 'approved'
+          ? `Người tạo đã đồng ý yêu cầu tham gia sự kiện "${event.title}" của bạn.`
+          : `Người tạo đã từ chối yêu cầu tham gia sự kiện "${event.title}" của bạn.`,
+        eventId: String(event._id),
+        link: '/calendar',
+        metadata: {
+          requestId,
+          status: decision,
+        },
+      })
+    } catch (err) {
+      console.warn('[CalendarService] Không thể gửi thông báo kết quả duyệt:', err)
+    }
+
+    const populated = await calendarRepository.findEventById(userId, eventId)
+    return mapEventResponse((populated ?? event) as unknown as RawEventDoc)
+  },
+
+  regeneratePublicToken: async (
+    userId: string,
+    categoryId: string,
+  ): Promise<{ publicToken: string }> => {
+    const user = await UserModel.findById(userId).select('email').lean()
+    const existing = await calendarRepository.findCategoryDocById(categoryId)
+    if (!existing) {
+      throw new AppError(404, 'CATEGORY_NOT_FOUND', 'Không tìm thấy lịch yêu cầu')
+    }
+    const role = getCategoryRole(existing as unknown as RawCategoryDoc, userId, user?.email)
+    if (!role) {
+      throw new AppError(404, 'CATEGORY_NOT_FOUND', 'Không tìm thấy lịch yêu cầu')
+    }
+    if (role !== 'owner' && role !== 'admin') {
+      throw new AppError(403, 'FORBIDDEN', 'Bạn không có quyền đổi liên kết công khai của lịch này')
+    }
+
+    const publicToken = randomBytes(16).toString('base64url')
+    await CalendarCategoryModel.updateOne(
+      { _id: categoryId },
+      { $set: { publicToken, 'settings.privacy': 'public' } },
+    )
+    return { publicToken }
+  },
+
+  getPublicCalendarByToken: async (publicToken: string) => {
+    const cleanToken = publicToken.trim()
+    if (!cleanToken) {
+      throw new AppError(404, 'PUBLIC_CALENDAR_NOT_FOUND', 'Lịch công khai không tồn tại hoặc đã chuyển sang chế độ riêng tư')
+    }
+    const category = await calendarRepository.findPublicCategoryByToken(cleanToken)
+    if (!category) {
+      throw new AppError(404, 'PUBLIC_CALENDAR_NOT_FOUND', 'Lịch công khai không tồn tại hoặc đã chuyển sang chế độ riêng tư')
+    }
+
+    const ownerPop =
+      category.userId && typeof category.userId === 'object' && 'fullName' in category.userId
+        ? (category.userId as { fullName?: string })
+        : null
+    const ownerName = ownerPop?.fullName || 'Người dùng EduTrack'
+
+    const rawEvents = await calendarRepository.findEventsByCategoryId(String(category._id))
+    const publicEvents: Array<{
+      id: string
+      title: string
+      description: string
+      startDate: string
+      endDate: string
+      isAllDay: boolean
+      location: string
+      onlineMeetingUrl: string
+      color: string
+      timeZone?: string
+      recurrence?: RecurrenceConfig
+      exceptionDates: string[]
+      isMaskedBusy: boolean
+    }> = []
+
+    for (const raw of rawEvents) {
+      const mapped = mapEventResponse(raw as unknown as RawEventDoc)
+      if (mapped.entryType !== 'event') continue
+      if (mapped.visibility === 'private') continue
+      publicEvents.push({
+          id: mapped.id,
+          title: mapped.title,
+          description: mapped.description,
+          startDate: mapped.startDate,
+          endDate: mapped.endDate,
+          isAllDay: mapped.isAllDay,
+          location: mapped.location,
+          onlineMeetingUrl: mapped.onlineMeetingUrl,
+          color: mapped.color || category.color || '#2563EB',
+          timeZone: mapped.timeZone,
+          recurrence: mapped.recurrence,
+        exceptionDates: mapped.exceptionDates ?? [],
+        isMaskedBusy: false,
+      })
+    }
+
+    return {
+      category: {
+        id: String(category._id),
+        name: category.name,
+        color: category.color,
+        description: category.description ?? '',
+        timeZone: category.settings?.timeZone ?? 'Asia/Ho_Chi_Minh',
+        ownerName,
+      },
+      events: publicEvents,
+    }
+  },
+
+  exportPublicCalendarIcs: async (publicToken: string): Promise<{ icsContent: string; filename: string }> => {
+    const { category, events } = await calendarService.getPublicCalendarByToken(publicToken)
+    const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`)
+    const formatIcsDate = (dateStr: string, isAllDay: boolean) => {
+      const d = new Date(dateStr)
+      if (isAllDay) {
+        return `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}`
+      }
+      return `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}Z`
+    }
+    const escapeIcs = (str: string) =>
+      str.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n')
+
+    const lines = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//EduTrack//Calendar Module//VI',
+      'CALSCALE:GREGORIAN',
+      'METHOD:PUBLISH',
+      `X-WR-CALNAME:${escapeIcs(category.name)}`,
+    ]
+    if (category.description) {
+      lines.push(`X-WR-CALDESC:${escapeIcs(category.description)}`)
+    }
+    if (category.timeZone) {
+      lines.push(`X-WR-TIMEZONE:${category.timeZone}`)
+    }
+    for (const event of events) {
+      lines.push('BEGIN:VEVENT')
+      lines.push(`UID:edutrack-${event.id}@edutrack.app`)
+      lines.push(`DTSTAMP:${formatIcsDate(new Date().toISOString(), false)}`)
+      if (event.isAllDay) {
+        lines.push(`DTSTART;VALUE=DATE:${formatIcsDate(event.startDate, true)}`)
+        lines.push(`DTEND;VALUE=DATE:${formatIcsDate(event.endDate, true)}`)
+      } else {
+        lines.push(`DTSTART:${formatIcsDate(event.startDate, false)}`)
+        lines.push(`DTEND:${formatIcsDate(event.endDate, false)}`)
+      }
+      lines.push(`SUMMARY:${escapeIcs(event.title)}`)
+      if (event.description) lines.push(`DESCRIPTION:${escapeIcs(event.description)}`)
+      if (event.location) lines.push(`LOCATION:${escapeIcs(event.location)}`)
+      lines.push('END:VEVENT')
+    }
+    lines.push('END:VCALENDAR')
+    const cleanFilename = category.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'calendar'
+    return { icsContent: lines.join('\r\n'), filename: `${cleanFilename}.ics` }
+  },
+
+  subscribePublicCalendar: async (userId: string, publicToken: string): Promise<void> => {
+    const existing = await calendarRepository.findPublicCategoryByToken(publicToken.trim())
+    if (!existing) {
+      throw new AppError(404, 'PUBLIC_CALENDAR_NOT_FOUND', 'Lịch công khai không tồn tại hoặc đã chuyển sang chế độ riêng tư')
+    }
+    const ownerId =
+      existing.userId && typeof existing.userId === 'object' && '_id' in existing.userId
+        ? String((existing.userId as { _id: unknown })._id)
+        : String(existing.userId)
+    if (ownerId === userId) {
+      throw new AppError(400, 'CANNOT_SUBSCRIBE_OWN_CALENDAR', 'Bạn là chủ sở hữu lịch này')
+    }
+    await calendarRepository.subscribePublicCategory(publicToken.trim(), userId)
+  },
+
+  unsubscribePublicCalendar: async (userId: string, categoryId: string): Promise<void> => {
+    const updated = await calendarRepository.unsubscribeCategory(categoryId, userId)
+    if (!updated) {
+      throw new AppError(404, 'CATEGORY_NOT_FOUND', 'Không tìm thấy lịch yêu cầu')
+    }
   },
 }

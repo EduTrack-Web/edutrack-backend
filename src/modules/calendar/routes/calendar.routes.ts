@@ -25,6 +25,8 @@ import {
   resolveGoogleCalendarConflict,
   respondEventInvitation,
   retryGoogleSyncJob,
+  leaveCategory,
+  resolveGuest,
   setAllCategoriesVisibility,
   setOnlyCategoryVisible,
   startGoogleCalendarConnect,
@@ -40,6 +42,23 @@ import {
   updateGoogleCalendarSelection,
   updateGoogleCalendarVisibility,
   updateGoogleIntegrationSettings,
+  respondEventInvitation,
+  leaveEvent,
+  getCalendarPreferences,
+  getVietnameseHolidays,
+  getVietnameseLunarDates,
+  updateCalendarPreferences,
+  enableEventShare,
+  revokeEventShare,
+  getSharedEventByToken,
+  requestJoinSharedEvent,
+  cancelJoinRequest,
+  respondJoinRequest,
+  regeneratePublicToken,
+  getPublicCalendar,
+  exportPublicCalendarIcs,
+  subscribePublicCalendar,
+  unsubscribePublicCalendar,
 } from '@/modules/calendar/controllers/calendar.controller.js'
 
 export const calendarRouter = Router()
@@ -58,6 +77,8 @@ const lunarCalendarLimiter = rateLimit({
   },
 })
 
+calendarRouter.get('/public/:publicToken', getPublicCalendar)
+calendarRouter.get('/public/:publicToken/export-file', exportPublicCalendarIcs)
 const holidaysLimiter = rateLimit({
   windowMs: 60 * 1_000,
   limit: 60,
@@ -132,9 +153,14 @@ calendarRouter.put('/categories/:categoryId/visibility-selection', requireCsrf, 
 calendarRouter.put('/categories/:categoryId', requireCsrf, updateCategory)
 calendarRouter.patch('/categories/:categoryId/visibility', requireCsrf, toggleCategoryVisibility)
 calendarRouter.delete('/categories/:categoryId', requireCsrf, deleteCategory)
+calendarRouter.delete('/categories/:categoryId/members/me', requireCsrf, leaveCategory)
+calendarRouter.post('/categories/:categoryId/public-token', requireCsrf, regeneratePublicToken)
+calendarRouter.post('/public/:publicToken/subscribe', requireCsrf, subscribePublicCalendar)
+calendarRouter.delete('/categories/:categoryId/subscription', requireCsrf, unsubscribePublicCalendar)
 calendarRouter.get('/categories/:categoryId/export-file', exportCategory)
 calendarRouter.post('/categories/:categoryId/imports', requireCsrf, importCategory)
 
+calendarRouter.post('/guests/resolve', requireCsrf, resolveGuest)
 calendarRouter.get('/events', getEvents)
 calendarRouter.post('/events', requireCsrf, createEvent)
 calendarRouter.get('/events/:eventId', getEventById)
@@ -143,3 +169,9 @@ calendarRouter.delete('/events/:eventId', requireCsrf, deleteEvent)
 calendarRouter.patch('/events/:eventId/completion', requireCsrf, toggleTaskComplete)
 calendarRouter.patch('/events/:eventId/invitations/me', requireCsrf, respondEventInvitation)
 calendarRouter.delete('/events/:eventId/attendees/me', requireCsrf, leaveEvent)
+calendarRouter.post('/events/:eventId/share', requireCsrf, enableEventShare)
+calendarRouter.delete('/events/:eventId/share', requireCsrf, revokeEventShare)
+calendarRouter.patch('/events/:eventId/join-requests/:requestId', requireCsrf, respondJoinRequest)
+calendarRouter.get('/shared/:shareToken', getSharedEventByToken)
+calendarRouter.post('/shared/:shareToken/join-requests', requireCsrf, requestJoinSharedEvent)
+calendarRouter.delete('/shared/:shareToken/join-requests/me', requireCsrf, cancelJoinRequest)

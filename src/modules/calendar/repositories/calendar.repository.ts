@@ -32,7 +32,7 @@ export const calendarRepository = {
     ).select('preferences.calendar').lean()
   },
 
-  findCategoriesByUserId: async (userId: string) => {
+  findCategoriesByUserId: async (userId: string, userEmail?: string) => {
     const legacyNames = [
       'Bài tập & Hạn chót',
       'Tự học - Try hard',
@@ -51,30 +51,82 @@ export const calendarRepository = {
       await EventModel.updateMany({ calendarId: { $in: legacyIds } }, { $set: { calendarId: null } })
     }
 
-    let categories = await CalendarCategoryModel.find({ userId }).sort({ createdAt: 1 }).lean()
+    const ownedCategories = await CalendarCategoryModel.find({ userId }).sort({ createdAt: 1 }).lean()
+    const userDoc = await UserModel.findById(userId)
+      .select('preferences.calendar.defaultCalendarInitialized')
+      .lean()
+    const isDefaultInitialized = Boolean(userDoc?.preferences?.calendar?.defaultCalendarInitialized)
 
-    const hasDefault = categories.some((c) => c.isDefault)
-    if (!hasDefault) {
-      const existingMyCal = categories.find((c) => c.name.toLowerCase() === 'lịch của tôi')
-      if (existingMyCal) {
-        await CalendarCategoryModel.updateOne(
-          { _id: existingMyCal._id },
-          { $set: { isDefault: true, color: '#EAB308' } },
-        )
-      } else {
-        await CalendarCategoryModel.create({
-          userId,
-          name: 'Lịch của tôi',
-          color: '#EAB308',
-          description: 'Lịch cá nhân mặc định',
-          isDefault: true,
-          isVisible: true,
-        })
-      }
-      categories = await CalendarCategoryModel.find({ userId }).sort({ createdAt: 1 }).lean()
+    if (ownedCategories.length === 0 && !isDefaultInitialized) {
+      await CalendarCategoryModel.create({
+        userId,
+        name: 'Lịch của tôi',
+        color: '#EAB308',
+        description: 'Lịch cá nhân mặc định',
+        isDefault: true,
+        isVisible: true,
+      })
+      await UserModel.updateOne(
+        { _id: userId },
+        { $set: { 'preferences.calendar.defaultCalendarInitialized': true } },
+      )
+    } else if (ownedCategories.length > 0 && !isDefaultInitialized) {
+      await UserModel.updateOne(
+        { _id: userId },
+        { $set: { 'preferences.calendar.defaultCalendarInitialized': true } },
+      )
     }
 
-    return categories
+    if (userEmail) {
+      const cleanEmail = userEmail.trim().toLowerCase()
+      const emailRegex = new RegExp(`^${cleanEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')
+      return CalendarCategoryModel.find({
+        $or: [
+          { userId },
+          { 'sharedWith.email': emailRegex },
+          { 'settings.sharedWith.email': emailRegex },
+          { subscribers: userId, 'settings.privacy': 'public' },
+        ],
+      }).sort({ createdAt: 1 }).lean()
+    }
+
+    return CalendarCategoryModel.find({
+      $or: [
+        { userId },
+        { subscribers: userId, 'settings.privacy': 'public' },
+      ],
+    }).sort({ createdAt: 1 }).lean()
+  },
+
+  findPublicCategoryByToken: (publicToken: string) => {
+    return CalendarCategoryModel.findOne({
+      publicToken,
+      'settings.privacy': 'public',
+    })
+      .populate('userId', 'fullName')
+      .lean()
+  },
+
+  subscribePublicCategory: (publicToken: string, userId: string) => {
+    return CalendarCategoryModel.findOneAndUpdate(
+      { publicToken, 'settings.privacy': 'public' },
+      { $addToSet: { subscribers: userId } },
+      { returnDocument: 'after' },
+    ).lean()
+  },
+
+  unsubscribeCategory: (categoryId: string, userId: string) => {
+    if (!isValidObjectId(categoryId)) return null
+    return CalendarCategoryModel.findByIdAndUpdate(
+      categoryId,
+      { $pull: { subscribers: userId } },
+      { returnDocument: 'after' },
+    ).lean()
+  },
+
+  findCategoryDocById: (categoryId: string) => {
+    if (!isValidObjectId(categoryId)) return null
+    return CalendarCategoryModel.findById(categoryId).lean()
   },
 
   findCategoryById: (userId: string, categoryId: string) => {
@@ -87,15 +139,31 @@ export const calendarRepository = {
   },
 
   createCategory: (userId: string, data: CreateCategoryInput) => {
+    const sharedWith = data.sharedWith ?? data.settings?.sharedWith ?? []
+    const settings = data.settings ? { ...data.settings, sharedWith } : undefined
     return CalendarCategoryModel.create({
       userId,
       name: data.name,
       color: data.color ?? '#2563EB',
-      settings: data.settings,
+      settings,
+      sharedWith,
       description: data.description ?? '',
       isVisible: true,
       isDefault: false,
     })
+  },
+
+  updateCategoryById: (categoryId: string, data: UpdateCategoryInput) => {
+    if (!isValidObjectId(categoryId)) return null
+    const updateFields: Record<string, unknown> = { ...data }
+    if (data.sharedWith !== undefined && data.settings === undefined) {
+      updateFields['settings.sharedWith'] = data.sharedWith
+    }
+    return CalendarCategoryModel.findByIdAndUpdate(
+      categoryId,
+      { $set: updateFields },
+      { returnDocument: 'after', runValidators: true },
+    ).lean()
   },
 
   updateCategory: (userId: string, categoryId: string, data: UpdateCategoryInput) => {
@@ -133,11 +201,31 @@ export const calendarRepository = {
 
   deleteCategory: async (userId: string, categoryId: string) => {
     if (!isValidObjectId(categoryId)) return null
-    await EventModel.updateMany({ userId, calendarId: categoryId }, { $set: { calendarId: null } })
+    await UserModel.updateOne(
+      { _id: userId },
+      { $set: { 'preferences.calendar.defaultCalendarInitialized': true } },
+    )
+    await EventModel.deleteMany({ calendarId: categoryId })
     return CalendarCategoryModel.findOneAndDelete({ _id: categoryId, userId }).lean()
   },
 
-  findEvents: (userId: string, userEmail?: string, filters: EventQueryFilters = {}) => {
+  leaveCategory: async (categoryId: string, userEmail: string) => {
+    if (!isValidObjectId(categoryId)) return null
+    const cleanEmail = userEmail.trim().toLowerCase()
+    const emailRegex = new RegExp(`^${cleanEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')
+    return CalendarCategoryModel.findByIdAndUpdate(
+      categoryId,
+      {
+        $pull: {
+          sharedWith: { email: emailRegex },
+          'settings.sharedWith': { email: emailRegex },
+        },
+      },
+      { returnDocument: 'after' },
+    ).lean()
+  },
+
+  findEvents: async (userId: string, userEmail?: string, filters: EventQueryFilters = {}) => {
     const andConditions: Record<string, unknown>[] = []
 
     const accessCriteria: Record<string, unknown>[] = [{ userId }]
@@ -152,6 +240,31 @@ export const calendarRepository = {
           },
         },
       })
+
+      const sharedCategories = await CalendarCategoryModel.find({
+        $or: [
+          { 'sharedWith.email': emailRegex },
+          { 'settings.sharedWith.email': emailRegex },
+          { subscribers: userId, 'settings.privacy': 'public' },
+        ],
+      })
+        .select('_id')
+        .lean()
+      const sharedCategoryIds = sharedCategories.map((c) => c._id)
+      if (sharedCategoryIds.length > 0) {
+        accessCriteria.push({ calendarId: { $in: sharedCategoryIds } })
+      }
+    } else {
+      const subscribedCategories = await CalendarCategoryModel.find({
+        subscribers: userId,
+        'settings.privacy': 'public',
+      })
+        .select('_id')
+        .lean()
+      const subscribedIds = subscribedCategories.map((c) => c._id)
+      if (subscribedIds.length > 0) {
+        accessCriteria.push({ calendarId: { $in: subscribedIds } })
+      }
     }
     andConditions.push({ $or: accessCriteria })
 
@@ -225,7 +338,16 @@ export const calendarRepository = {
       .lean()
   },
 
-  findEventById: (userId: string, eventId: string, userEmail?: string) => {
+  findEventsByCategoryId: (categoryId: string) => {
+    if (!isValidObjectId(categoryId)) return Promise.resolve([])
+    return EventModel.find({ calendarId: categoryId })
+      .populate('calendarId', 'name color description isVisible')
+      .populate('userId', 'email fullName avatarUrl')
+      .sort({ startDate: 1 })
+      .lean()
+  },
+
+  findEventById: async (userId: string, eventId: string, userEmail?: string) => {
     if (!isValidObjectId(eventId)) return null
     const accessCriteria: Record<string, unknown>[] = [{ userId }]
     if (userEmail) {
@@ -238,6 +360,31 @@ export const calendarRepository = {
           },
         },
       })
+
+      const sharedCategories = await CalendarCategoryModel.find({
+        $or: [
+          { 'sharedWith.email': emailRegex },
+          { 'settings.sharedWith.email': emailRegex },
+          { subscribers: userId, 'settings.privacy': 'public' },
+        ],
+      })
+        .select('_id')
+        .lean()
+      const sharedCategoryIds = sharedCategories.map((c) => c._id)
+      if (sharedCategoryIds.length > 0) {
+        accessCriteria.push({ calendarId: { $in: sharedCategoryIds } })
+      }
+    } else {
+      const subscribedCategories = await CalendarCategoryModel.find({
+        subscribers: userId,
+        'settings.privacy': 'public',
+      })
+        .select('_id')
+        .lean()
+      const subscribedIds = subscribedCategories.map((c) => c._id)
+      if (subscribedIds.length > 0) {
+        accessCriteria.push({ calendarId: { $in: subscribedIds } })
+      }
     }
     return EventModel.findOne({ _id: eventId, $or: accessCriteria })
       .populate('calendarId', 'name color description isVisible')
