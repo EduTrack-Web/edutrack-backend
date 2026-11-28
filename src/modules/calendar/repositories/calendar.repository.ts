@@ -469,10 +469,15 @@ export const calendarRepository = {
     })
   },
 
-  updateEvent: (userId: string, eventId: string, data: UpdateEventInput) => {
+  updateEvent: (
+    userId: string,
+    eventId: string,
+    data: UpdateEventInput,
+    extraFields?: Record<string, unknown>,
+  ) => {
     if (!isValidObjectId(eventId)) return null
 
-    const updateFields: Record<string, unknown> = {}
+    const updateFields: Record<string, unknown> = { ...(extraFields ?? {}) }
     if ('title' in data) updateFields.title = data.title
     if ('entryType' in data) updateFields.entryType = data.entryType
     if ('priority' in data) updateFields.priority = data.priority
