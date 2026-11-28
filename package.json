@@ -29,7 +29,9 @@
     "holidays:sync": "tsx src/jobs/sync-official-holidays.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc && tsc-alias",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "worker": "tsx src/worker.ts",
+    "start:worker": "node dist/worker.js"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",

@@ -166,6 +166,67 @@ const eventSchema = new Schema(
       type: Date,
       default: null,
     },
+    googleSource: {
+      type: new Schema({
+        integrationId: { type: Schema.Types.ObjectId, ref: 'GoogleCalendarIntegration', default: null },
+        calendarConnectionId: { type: Schema.Types.ObjectId, ref: 'GoogleCalendar', default: null },
+        accountEmail: { type: String, required: true },
+        calendarName: { type: String, default: '' },
+        eventColorId: { type: String, default: '' },
+        eventLabelId: { type: String, default: '' },
+        eventColor: { type: String, default: '' },
+        calendarColor: { type: String, required: true },
+        accessRole: {
+          type: String,
+          enum: ['freeBusyReader', 'reader', 'writer', 'owner'],
+          default: 'writer',
+        },
+        creator: { type: new Schema({ email: String, displayName: String }, { _id: false }) },
+        organizer: { type: new Schema({ email: String, displayName: String }, { _id: false }) },
+      }, { _id: false }),
+      default: undefined,
+    },
+    isGoogleReadOnly: {
+      type: Boolean,
+      default: false,
+    },
+    googleCalendarId: {
+      type: String,
+      default: '',
+    },
+    googleAccountSub: {
+      type: String,
+      default: '',
+    },
+    googleLocalSyncedAt: {
+      type: Date,
+      default: null,
+    },
+    googleExceptionDates: {
+      type: [Date],
+      default: [],
+    },
+    googleEventId: {
+      type: String,
+      default: '',
+    },
+    googleEtag: {
+      type: String,
+      default: '',
+    },
+    googleUpdatedAt: {
+      type: Date,
+      default: null,
+    },
+    lastSyncedAt: {
+      type: Date,
+      default: null,
+    },
+    syncOrigin: {
+      type: String,
+      enum: ['local', 'google'],
+      default: 'local',
+    },
     remindersSent: {
       type: [
         new Schema(
@@ -185,6 +246,8 @@ const eventSchema = new Schema(
 eventSchema.index({ userId: 1, startDate: 1, endDate: 1 })
 eventSchema.index({ userId: 1, entryType: 1, isCompleted: 1 })
 eventSchema.index({ userId: 1, calendarId: 1 })
+eventSchema.index({ userId: 1, googleEventId: 1 })
+eventSchema.index({ userId: 1, googleAccountSub: 1, googleCalendarId: 1, googleEventId: 1 })
 eventSchema.index({ 'guests.email': 1 })
 
 export type EventDocument = InferSchemaType<typeof eventSchema>

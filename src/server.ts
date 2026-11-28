@@ -6,6 +6,7 @@ import { createApp } from '@/app.js'
 import { connectDatabase, disconnectDatabase } from '@/config/database.js'
 import { env } from '@/config/env.js'
 import { seedDevelopmentUsers } from '@/config/seed.js'
+import { startGoogleSyncScheduler } from '@/jobs/google-sync-scheduler.js'
 import { startReminderScheduler } from '@/jobs/reminder-scheduler.js'
 import {
   CHAT_SOCKET_SERVER_KEY,
@@ -29,6 +30,7 @@ const startServer = async (): Promise<void> => {
   })
 
   const reminderTimer = startReminderScheduler()
+  const googleSyncWorker = env.runEmbeddedWorker ? startGoogleSyncScheduler() : null
 
   const shutdown = (signal: NodeJS.Signals): void => {
     console.info(`Received ${signal}, shutting down`)
@@ -36,7 +38,10 @@ const startServer = async (): Promise<void> => {
     chatSocketServer.disconnectSockets(true)
     server.close(() => {
       chatSocketServer.close()
-      void disconnectDatabase().finally(() => process.exit(0))
+      const stopWorker = googleSyncWorker ? googleSyncWorker.stop() : Promise.resolve()
+      void stopWorker.finally(() => {
+        void disconnectDatabase().finally(() => process.exit(0))
+      })
     })
   }
 
