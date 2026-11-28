@@ -365,10 +365,10 @@ const mapEventResponse = (doc: RawEventDoc): CalendarEventResponse => {
       (!doc.color ||
         Boolean(
           doc.googleSource &&
-            !doc.googleSource.eventColorId &&
-            !doc.googleSource.eventLabelId &&
-            !doc.googleSource.eventColor &&
-            doc.color.toLowerCase() === doc.googleSource.calendarColor.toLowerCase(),
+          !doc.googleSource.eventColorId &&
+          !doc.googleSource.eventLabelId &&
+          !doc.googleSource.eventColor &&
+          doc.color.toLowerCase() === doc.googleSource.calendarColor.toLowerCase(),
         )),
     color:
       doc.color ||
@@ -402,15 +402,15 @@ const mapEventResponse = (doc: RawEventDoc): CalendarEventResponse => {
     isShareEnabled: Boolean((doc as unknown as { isShareEnabled?: boolean }).isShareEnabled),
     joinRequests: Array.isArray((doc as unknown as { joinRequests?: unknown[] }).joinRequests)
       ? ((doc as unknown as { joinRequests: Array<Record<string, unknown>> }).joinRequests).map((r) => ({
-          id: String(r._id),
-          userId: String(r.userId),
-          email: String(r.email ?? ''),
-          fullName: String(r.fullName ?? ''),
-          message: String(r.message ?? ''),
-          status: (r.status === 'approved' || r.status === 'rejected' ? r.status : 'pending') as EventJoinRequestItem['status'],
-          createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : new Date(String(r.createdAt ?? Date.now())).toISOString(),
-          respondedAt: r.respondedAt instanceof Date ? r.respondedAt.toISOString() : r.respondedAt ? new Date(String(r.respondedAt)).toISOString() : null,
-        }))
+        id: String(r._id),
+        userId: String(r.userId),
+        email: String(r.email ?? ''),
+        fullName: String(r.fullName ?? ''),
+        message: String(r.message ?? ''),
+        status: (r.status === 'approved' || r.status === 'rejected' ? r.status : 'pending') as EventJoinRequestItem['status'],
+        createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : new Date(String(r.createdAt ?? Date.now())).toISOString(),
+        respondedAt: r.respondedAt instanceof Date ? r.respondedAt.toISOString() : r.respondedAt ? new Date(String(r.respondedAt)).toISOString() : null,
+      }))
       : [],
     createdAt: doc.createdAt ? doc.createdAt.toISOString() : new Date().toISOString(),
     updatedAt: doc.updatedAt ? doc.updatedAt.toISOString() : new Date().toISOString(),
@@ -457,7 +457,7 @@ export const calendarService = {
     if (data.settings?.privacy === 'public') {
       const publicToken = randomBytes(16).toString('base64url')
       await CalendarCategoryModel.updateOne({ _id: created._id }, { $set: { publicToken } })
-      ;(created as unknown as { publicToken?: string }).publicToken = publicToken
+        ; (created as unknown as { publicToken?: string }).publicToken = publicToken
     }
     if (data.sharedWith && data.sharedWith.length > 0) {
       void notifyNewCategoryMembers(data.sharedWith, new Set(), created.name, creatorName, created.description)
@@ -518,7 +518,7 @@ export const calendarService = {
     if (data.settings?.privacy === 'public' && !existingToken) {
       const publicToken = randomBytes(16).toString('base64url')
       await CalendarCategoryModel.updateOne({ _id: categoryId }, { $set: { publicToken } })
-      ;(updated as unknown as { publicToken?: string }).publicToken = publicToken
+        ; (updated as unknown as { publicToken?: string }).publicToken = publicToken
     }
 
     if (data.sharedWith && data.sharedWith.length > 0) {
@@ -1039,10 +1039,10 @@ export const calendarService = {
         if (standaloneResult.entryType === 'event') {
           const pushNewPromise = existing.syncOrigin === 'google'
             ? googleCalendarSyncService.enqueueDetachedGoogleEventPush(
-                rawOwnerId,
-                eventId,
-                standaloneResult.id,
-              )
+              rawOwnerId,
+              eventId,
+              standaloneResult.id,
+            )
             : googleCalendarSyncService.enqueueLocalEventPush(rawOwnerId, standaloneResult.id)
           void Promise.all([
             googleCalendarSyncService.enqueueLocalEventPush(rawOwnerId, eventId),
@@ -1100,23 +1100,23 @@ export const calendarService = {
           reminders: data.reminders || existing.reminders,
           recurrence: data.recurrence
             ? {
-                frequency: data.recurrence.frequency,
-                interval: data.recurrence.interval || 1,
-                daysOfWeek: data.recurrence.daysOfWeek || [],
-                until: data.recurrence.until
-                  ? new Date(data.recurrence.until)
-                  : existing.recurrence.until
-                    ? new Date(existing.recurrence.until)
-                    : null,
-                count: null,
-              }
+              frequency: data.recurrence.frequency,
+              interval: data.recurrence.interval || 1,
+              daysOfWeek: data.recurrence.daysOfWeek || [],
+              until: data.recurrence.until
+                ? new Date(data.recurrence.until)
+                : existing.recurrence.until
+                  ? new Date(existing.recurrence.until)
+                  : null,
+              count: null,
+            }
             : {
-                frequency: (existing.recurrence.frequency || 'daily') as RecurrenceFrequency,
-                interval: existing.recurrence.interval || 1,
-                daysOfWeek: existing.recurrence.daysOfWeek || [],
-                until: existing.recurrence.until ? new Date(existing.recurrence.until) : null,
-                count: null,
-              },
+              frequency: (existing.recurrence.frequency || 'daily') as RecurrenceFrequency,
+              interval: existing.recurrence.interval || 1,
+              daysOfWeek: existing.recurrence.daysOfWeek || [],
+              until: existing.recurrence.until ? new Date(existing.recurrence.until) : null,
+              count: null,
+            },
           exceptionDates: futureExceptions,
           ...(existing.googleSource ? { googleSource: existing.googleSource } : {}),
           ...(existing.syncOrigin ? { syncOrigin: existing.syncOrigin } : {}),
@@ -1143,10 +1143,10 @@ export const calendarService = {
         if (followingResult.entryType === 'event') {
           const pushFollowingPromise = existing.syncOrigin === 'google'
             ? googleCalendarSyncService.enqueueDetachedGoogleEventPush(
-                rawOwnerId,
-                eventId,
-                followingResult.id,
-              )
+              rawOwnerId,
+              eventId,
+              followingResult.id,
+            )
             : googleCalendarSyncService.enqueueLocalEventPush(rawOwnerId, followingResult.id)
           void Promise.all([
             googleCalendarSyncService.enqueueLocalEventPush(rawOwnerId, eventId),
@@ -1228,16 +1228,16 @@ export const calendarService = {
           if (weekdayResult.entryType === 'event') {
             const pushWeekdayPromise = existing.syncOrigin === 'google'
               ? googleCalendarSyncService.enqueueDetachedGoogleEventPush(
-                  rawOwnerId,
-                  eventId,
-                  weekdayResult.id,
-                )
+                rawOwnerId,
+                eventId,
+                weekdayResult.id,
+              )
               : googleCalendarSyncService.enqueueLocalEventPush(rawOwnerId, weekdayResult.id)
             const pushTargets = remainingDays.length > 0
               ? [
-                  googleCalendarSyncService.enqueueLocalEventPush(rawOwnerId, eventId),
-                  pushWeekdayPromise,
-                ]
+                googleCalendarSyncService.enqueueLocalEventPush(rawOwnerId, eventId),
+                pushWeekdayPromise,
+              ]
               : [pushWeekdayPromise]
             void Promise.all(pushTargets).then(() => {
               wakeUpGoogleSyncWorker()
@@ -1515,9 +1515,10 @@ export const calendarService = {
 
     if (!isOwner && !isCategoryEditor) {
       throw new AppError(403, 'FORBIDDEN', 'Bạn không có quyền xóa sự kiện này')
-        const activeMappings = (await googleCalendarRepository.findMappingsByEventId(userId, eventId))
-      .filter((m) => m.status !== 'suppressed_local_delete')
+    }
 
+    const activeMappings = (await googleCalendarRepository.findMappingsByEventId(rawOwnerId, eventId))
+      .filter((m) => m.status !== 'suppressed_local_delete')
     if (activeMappings.length > 0) {
       if (!googleDeleteScope) {
         throw new AppError(
@@ -1544,7 +1545,7 @@ export const calendarService = {
 
       if (mode === 'this') {
         await EventModel.updateOne(
-          { _id: eventId, userId },
+          { _id: eventId, userId: rawOwnerId },
           {
             $addToSet: {
               exceptionDates: targetDate,
@@ -1553,7 +1554,7 @@ export const calendarService = {
           },
         )
         if (existing.entryType === 'event' && googleDeleteScope === 'both') {
-          void googleCalendarSyncService.enqueueLocalEventPush(userId, eventId).then(() => {
+          void googleCalendarSyncService.enqueueLocalEventPush(rawOwnerId, eventId).then(() => {
             wakeUpGoogleSyncWorker()
           })
         }
@@ -1563,11 +1564,11 @@ export const calendarService = {
       if (mode === 'following') {
         if (targetDateKey <= baseStartKey) {
           if (activeMappings.length > 0 && googleDeleteScope) {
-            await googleCalendarSyncService.enqueueLocalEventDelete(userId, eventId, googleDeleteScope)
+            await googleCalendarSyncService.enqueueLocalEventDelete(rawOwnerId, eventId, googleDeleteScope)
             wakeUpGoogleSyncWorker()
           }
-          await calendarRepository.deleteEvent(userId, eventId)
-          await EventModel.deleteMany({ userId, recurringEventId: eventId })
+          await calendarRepository.deleteEvent(rawOwnerId, eventId)
+          await EventModel.deleteMany({ userId: rawOwnerId, recurringEventId: eventId })
           return
         }
         const untilDate = new Date(targetDate.getTime() - 1000)
@@ -1592,7 +1593,7 @@ export const calendarService = {
           originalStartDate: { $gte: targetDate },
         })
         if (existing.entryType === 'event' && googleDeleteScope === 'both') {
-          void googleCalendarSyncService.enqueueLocalEventPush(userId, eventId).then(() => {
+          void googleCalendarSyncService.enqueueLocalEventPush(rawOwnerId, eventId).then(() => {
             wakeUpGoogleSyncWorker()
           })
         }
@@ -1601,10 +1602,10 @@ export const calendarService = {
     }
 
     if (activeMappings.length > 0 && googleDeleteScope) {
-      await googleCalendarSyncService.enqueueLocalEventDelete(userId, eventId, googleDeleteScope)
+      await googleCalendarSyncService.enqueueLocalEventDelete(rawOwnerId, eventId, googleDeleteScope)
       wakeUpGoogleSyncWorker()
     }
-    await calendarRepository.deleteEvent(userId, eventId)
+    await calendarRepository.deleteEvent(rawOwnerId, eventId)
     if (existing.recurrence && existing.recurrence.frequency !== 'none') {
       await EventModel.deleteMany({ userId: rawOwnerId, recurringEventId: eventId })
     }
@@ -2082,12 +2083,12 @@ export const calendarService = {
       creator: { id: ownerId, fullName: creatorName },
       recurrence: event.recurrence
         ? {
-            frequency: event.recurrence.frequency as RecurrenceFrequency,
-            interval: event.recurrence.interval ?? 1,
-            daysOfWeek: event.recurrence.daysOfWeek ?? [],
-            until: event.recurrence.until ? new Date(event.recurrence.until).toISOString() : null,
-            count: event.recurrence.count ?? null,
-          }
+          frequency: event.recurrence.frequency as RecurrenceFrequency,
+          interval: event.recurrence.interval ?? 1,
+          daysOfWeek: event.recurrence.daysOfWeek ?? [],
+          until: event.recurrence.until ? new Date(event.recurrence.until).toISOString() : null,
+          count: event.recurrence.count ?? null,
+        }
         : undefined,
       viewerStatus,
       myRequestId,
@@ -2332,17 +2333,17 @@ export const calendarService = {
       if (mapped.entryType !== 'event') continue
       if (mapped.visibility === 'private') continue
       publicEvents.push({
-          id: mapped.id,
-          title: mapped.title,
-          description: mapped.description,
-          startDate: mapped.startDate,
-          endDate: mapped.endDate,
-          isAllDay: mapped.isAllDay,
-          location: mapped.location,
-          onlineMeetingUrl: mapped.onlineMeetingUrl,
-          color: mapped.color || category.color || '#2563EB',
-          timeZone: mapped.timeZone,
-          recurrence: mapped.recurrence,
+        id: mapped.id,
+        title: mapped.title,
+        description: mapped.description,
+        startDate: mapped.startDate,
+        endDate: mapped.endDate,
+        isAllDay: mapped.isAllDay,
+        location: mapped.location,
+        onlineMeetingUrl: mapped.onlineMeetingUrl,
+        color: mapped.color || category.color || '#2563EB',
+        timeZone: mapped.timeZone,
+        recurrence: mapped.recurrence,
         exceptionDates: mapped.exceptionDates ?? [],
         isMaskedBusy: false,
       })
